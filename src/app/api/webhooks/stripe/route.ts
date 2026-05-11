@@ -1,5 +1,5 @@
 import { headers } from 'next/headers';
-import { stripe } from '@/lib/stripe';
+import { getStripe } from '@/lib/stripe';
 import { createClient } from '@supabase/supabase-js';
 import Stripe from 'stripe';
 
@@ -17,6 +17,8 @@ export async function POST(req: Request) {
   let event: Stripe.Event;
 
   try {
+    const stripe = getStripe();
+
     event = stripe.webhooks.constructEvent(
       body,
       signature,
@@ -30,6 +32,7 @@ export async function POST(req: Request) {
 
   // Event: Subscription Created
   if (event.type === 'checkout.session.completed') {
+    const stripe = getStripe();
     const subscription = await stripe.subscriptions.retrieve(session.subscription as string);
     const userId = session.metadata?.userId;
 

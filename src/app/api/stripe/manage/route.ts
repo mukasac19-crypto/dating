@@ -1,9 +1,10 @@
 import { createClient } from '@/lib/supabase/server';
-import { stripe } from '@/lib/stripe';
+import { getStripe } from '@/lib/stripe';
 import { NextResponse } from 'next/server';
 
 export async function POST(req: Request) {
   try {
+    const stripe = getStripe();
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -18,7 +19,13 @@ export async function POST(req: Request) {
       .eq('id', user.id)
       .single();
 
-    const returnUrl = `${process.env.NEXT_PUBLIC_BASE_URL}/dashboard/profile`;
+    const siteUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_SITE_URL;
+
+    if (!siteUrl) {
+      throw new Error('Missing NEXT_PUBLIC_BASE_URL or NEXT_PUBLIC_SITE_URL environment variable.');
+    }
+
+    const returnUrl = `${siteUrl}/dashboard/profile`;
 
     // SCENARIO 1: User is already a subscriber (has stripe_customer_id)
     // Send them to the Customer Portal to manage their sub

@@ -208,9 +208,9 @@ export default function ProfilePage() {
             <h2 className="text-xl font-bold text-gray-900">Subscription Plan</h2>
             <p className="mt-1 text-gray-600">
               Status: <span className={`font-semibold capitalize ${
-                profile.subscription_status === 'active' ? 'text-green-600' : 'text-gray-500'
+                profile.subscription === 'premium' ? 'text-green-600' : 'text-gray-500'
               }`}>
-                {profile.subscription_status || 'Free'}
+                {profile.subscription || 'Free'}
               </span>
             </p>
           </div>
@@ -219,7 +219,7 @@ export default function ProfilePage() {
             disabled={isRedirectingToStripe}
             className="px-6 py-2 bg-gray-800 text-white font-semibold rounded-lg shadow-sm hover:bg-gray-900 disabled:opacity-70"
           >
-            {isRedirectingToStripe ? 'Loading...' : (profile.subscription_status === 'active' ? 'Manage Subscription' : 'Upgrade Plan')}
+            {isRedirectingToStripe ? 'Loading...' : (profile.subscription === 'premium' ? 'Manage Subscription' : 'Upgrade Plan')}
           </button>
         </div>
       </div>
