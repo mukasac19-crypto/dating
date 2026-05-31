@@ -167,8 +167,20 @@ Return a corrected JSON with just the "messages" array with accurate sender assi
 
     console.log(`Extracted ${formattedMessages.length} messages. Starting analysis...`);
 
+    const { data: profileRow } = await supabase
+      .from('profiles')
+      .select('full_name, username')
+      .eq('id', user.id)
+      .maybeSingle();
+    const userName =
+      profileRow?.full_name?.trim() ||
+      profileRow?.username?.trim() ||
+      user.email?.split('@')[0] ||
+      null;
+
     const analysisResult = await analyzeConversationWithContext(formattedMessages, {
       platform: ocrContent.platform_detected,
+      userName,
     });
 
     const enrichedResult = {

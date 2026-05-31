@@ -4,7 +4,13 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { PlusIcon, TrashIcon, ChatBubbleLeftRightIcon, UserIcon } from '@heroicons/react/24/outline';
+import {
+  Plus,
+  Trash2,
+  MessageCircle,
+  ShieldCheck,
+  ChevronRight,
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 import { User } from '@supabase/supabase-js';
 
@@ -14,50 +20,87 @@ interface ChatSession {
   updated_at: string;
 }
 
+interface Profile {
+  full_name: string | null;
+  username: string | null;
+}
+
 export default function ChatHistorySidebar() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
   const pathname = usePathname();
   const router = useRouter();
 
-  const getEmailInitials = (email: string | undefined) => {
-    if (!email) return '..';
-    const parts = email.split('@');
-    if (parts.length < 2) return email.slice(0, 2).toUpperCase();
-    const namePart = parts[0];
-    const domainPart = parts[1];
-    const firstInitial = namePart[0] || '';
-    const secondInitial = domainPart[0] || '';
-    return `${firstInitial}${secondInitial}`.toUpperCase();
-  };
+  const displayName = (() => {
+    if (profile?.full_name?.trim()) return profile.full_name.trim();
+    if (profile?.username?.trim()) return profile.username.trim();
+    if (user?.email) return user.email;
+    return 'Account';
+  })();
+
+  const initials = (() => {
+    const source = profile?.full_name?.trim() || user?.email || '';
+    if (!source) return '··';
+    if (profile?.full_name) {
+      const parts = source.split(/\s+/).filter(Boolean);
+      const first = parts[0]?.[0] || '';
+      const second = parts[1]?.[0] || parts[0]?.[1] || '';
+      return (first + second).toUpperCase();
+    }
+    const namePart = source.split('@')[0] || '';
+    return (namePart[0] || '') + (namePart[1] || '').toUpperCase();
+  })();
 
   useEffect(() => {
-    const fetchSessions = async () => {
+    let cancelled = false;
+
+    const fetchAll = async () => {
       const { data: { user } } = await supabase.auth.getUser();
+      if (cancelled) return;
       setUser(user);
       if (!user) {
         setLoading(false);
         return;
       }
 
-      const { data, error } = await supabase
-        .from('chat_sessions')
-        .select('id, title, updated_at')
-        .eq('user_id', user.id)
-        .order('updated_at', { ascending: false });
+      const [sessionsRes, profileRes] = await Promise.all([
+        supabase
+          .from('chat_sessions')
+          .select('id, title, updated_at')
+          .eq('user_id', user.id)
+          .order('updated_at', { ascending: false }),
+        supabase
+          .from('profiles')
+          .select('full_name, username')
+          .eq('id', user.id)
+          .maybeSingle(),
+      ]);
 
-      if (error) {
+      if (cancelled) return;
+      if (sessionsRes.error) {
         toast.error('Could not fetch chat history.');
-        console.error(error);
+        console.error(sessionsRes.error);
       } else {
-        setSessions(data || []);
+        setSessions(sessionsRes.data || []);
+      }
+      if (profileRes.data) {
+        setProfile(profileRes.data);
       }
       setLoading(false);
     };
 
-    fetchSessions();
+    fetchAll();
+
+    const onRenamed = () => fetchAll();
+    window.addEventListener('chat-session-renamed', onRenamed);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('chat-session-renamed', onRenamed);
+    };
   }, [supabase]);
 
   const handleDelete = async (sessionId: string, e: React.MouseEvent) => {
@@ -65,7 +108,7 @@ export default function ChatHistorySidebar() {
     e.preventDefault();
 
     const originalSessions = sessions;
-    setSessions(sessions.filter(s => s.id !== sessionId)); // Optimistic update
+    setSessions(sessions.filter((s) => s.id !== sessionId));
 
     const response = await fetch(`/api/chat/sessions/${sessionId}`, {
       method: 'DELETE',
@@ -73,10 +116,9 @@ export default function ChatHistorySidebar() {
 
     if (!response.ok) {
       toast.error('Failed to delete session.');
-      setSessions(originalSessions); // Revert on error
+      setSessions(originalSessions);
     } else {
       toast.success('Chat deleted.');
-      // If the active chat is the one being deleted, redirect
       if (pathname.includes(sessionId)) {
         router.push('/dashboard/chat/new');
       }
@@ -88,63 +130,101 @@ export default function ChatHistorySidebar() {
   };
 
   return (
-    <div className="bg-gray-50 border-r border-gray-200 h-full flex flex-col w-64">
-      <div className="p-4 border-b border-gray-200 flex justify-between items-center">
-        <h2 className="text-lg font-semibold text-gray-800">Chat History</h2>
+    <div className="bg-stone-50 border-r border-stone-200/70 h-full flex flex-col w-64">
+      {/* Brand mark */}
+      <div className="px-4 py-4 flex items-center gap-2.5 border-b border-stone-200/70">
+        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 flex items-center justify-center shadow-sm shadow-indigo-500/20">
+          <ShieldCheck className="w-4 h-4 text-white" />
+        </div>
+        <span className="text-base font-semibold tracking-tight text-slate-900">
+          Swipe Safe
+        </span>
+      </div>
+
+      {/* New chat CTA */}
+      <div className="px-3 pt-3 pb-2">
         <button
           onClick={handleNewChat}
-          className="p-2 rounded-md hover:bg-gray-200 transition-colors"
-          title="New Chat"
+          className="w-full inline-flex items-center justify-center gap-1.5 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2.5 transition-colors shadow-sm shadow-indigo-600/20"
         >
-          <PlusIcon className="w-5 h-5 text-gray-600" />
+          <Plus className="w-4 h-4" />
+          New chat
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto">
+
+      {/* Sessions */}
+      <div className="px-3 pt-3 pb-2">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 px-1.5 mb-1.5">
+          Recent
+        </p>
+      </div>
+      <div className="flex-1 overflow-y-auto px-2 pb-2">
         {loading ? (
-          <div className="p-4 text-center text-gray-500">Loading...</div>
-        ) : sessions.length === 0 ? (
-          <div className="p-4 text-center text-gray-500 text-sm">
-            No past chats found.
+          <div className="px-3 py-2 space-y-2">
+            <div className="h-9 rounded-xl bg-stone-100 animate-pulse" />
+            <div className="h-9 rounded-xl bg-stone-100 animate-pulse" />
+            <div className="h-9 rounded-xl bg-stone-100 animate-pulse" />
           </div>
+        ) : sessions.length === 0 ? (
+          <p className="px-3 py-2 text-xs text-slate-500 leading-relaxed">
+            Your past chats will show up here.
+          </p>
         ) : (
-          <ul className="py-2">
-            {sessions.map(session => (
-              <li key={session.id}>
-                <Link
-                  href={`/dashboard/chat/${session.id}`}
-                  className={`group flex items-center justify-between px-4 py-2 text-sm transition-colors ${
-                    pathname.includes(session.id)
-                      ? 'bg-blue-100 text-blue-700'
-                      : 'text-gray-700 hover:bg-gray-100'
-                  }`}
-                >
-                  <div className="flex items-center overflow-hidden">
-                    <ChatBubbleLeftRightIcon className="w-4 h-4 mr-3 flex-shrink-0" />
-                    <span className="truncate" title={session.title}>
-                      {session.title || 'Untitled Chat'}
-                    </span>
-                  </div>
-                  <button
-                    onClick={(e) => handleDelete(session.id, e)}
-                    className="p-1 rounded-md hover:bg-red-100 text-gray-500 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
-                    title="Delete Chat"
+          <ul className="space-y-1">
+            {sessions.map((session) => {
+              const isActive = pathname.includes(session.id);
+              return (
+                <li key={session.id}>
+                  <Link
+                    href={`/dashboard/chat/${session.id}`}
+                    className={`group relative flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all ${
+                      isActive
+                        ? 'bg-white ring-1 ring-indigo-200 text-slate-900 shadow-sm'
+                        : 'text-slate-600 hover:bg-white/70 hover:text-slate-900'
+                    }`}
                   >
-                    <TrashIcon className="w-4 h-4" />
-                  </button>
-                </Link>
-              </li>
-            ))}
+                    {isActive && (
+                      <span className="absolute left-1 top-1/2 -translate-y-1/2 h-5 w-0.5 rounded-full bg-indigo-500" />
+                    )}
+                    <MessageCircle
+                      className={`w-3.5 h-3.5 flex-shrink-0 ${
+                        isActive ? 'text-indigo-600' : 'text-slate-400'
+                      }`}
+                    />
+                    <span className="truncate flex-1" title={session.title}>
+                      {session.title || 'Untitled chat'}
+                    </span>
+                    <button
+                      onClick={(e) => handleDelete(session.id, e)}
+                      className="p-1 rounded-md hover:bg-rose-100 text-slate-400 hover:text-rose-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Delete chat"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
+
+      {/* User pill */}
       {user && (
-        <div className="p-4 border-t border-gray-200">
-          <div className="flex items-center space-x-2">
-            <Link href="/dashboard/profile" className="flex-1 flex items-center space-x-2 text-sm text-gray-600 hover:text-blue-600 p-2 rounded-md hover:bg-gray-200">
-              <UserIcon className="w-5 h-5" />
-              <span className="truncate">{getEmailInitials(user.email)}</span>
-            </Link>
-          </div>
+        <div className="p-3 border-t border-stone-200/70">
+          <Link
+            href="/dashboard/profile"
+            className="group flex items-center gap-3 rounded-2xl ring-1 ring-stone-200 bg-white p-2.5 hover:bg-stone-50 transition-colors"
+          >
+            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-100 to-indigo-200 text-indigo-700 flex items-center justify-center font-semibold text-xs flex-shrink-0">
+              {initials}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-slate-900 truncate">{displayName}</p>
+              <p className="text-[11px] text-slate-500">View profile</p>
+            </div>
+            <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-colors flex-shrink-0" />
+          </Link>
         </div>
       )}
     </div>

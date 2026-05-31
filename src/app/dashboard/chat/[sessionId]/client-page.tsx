@@ -3,8 +3,8 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import ChatInterface from '@/components/ChatInterface';
-import AnalysisDashboard from '@/components/AnalysisDashboard';
 import SenderConfigModal from '@/components/SenderConfigModal';
 import { AnalysisResult } from '@/types';
 import toast from 'react-hot-toast';
@@ -25,23 +25,51 @@ export interface Message {
   }[];
 }
 
-export default function DashboardClientPage({ 
-    sessionId, 
+function normalizeMessages(msgs: Message[]): Message[] {
+  return msgs.map((m) => ({
+    ...m,
+    timestamp: m.timestamp instanceof Date ? m.timestamp : new Date(m.timestamp as any),
+  }));
+}
+
+// Pick a sidebar title from the conversation. Skips auto-generated markers like
+// "📋 Pasted a conversation for analysis." and prefers the user's first real input.
+function deriveSessionTitle(msgs: Message[]): string | null {
+  const skipPrefixes = ['📋', '📱', '📸'];
+  for (const m of msgs) {
+    if (m.role !== 'user' || m.type !== 'text') continue;
+    const content = m.content?.trim();
+    if (!content) continue;
+    if (skipPrefixes.some((p) => content.startsWith(p))) continue;
+    return content.length > 50 ? content.slice(0, 47).trim() + '…' : content;
+  }
+  // Fallback: if only auto-generated user markers exist, use the first one
+  // (so the sidebar still reflects "this session has an analysis").
+  for (const m of msgs) {
+    if (m.role !== 'user' || m.type !== 'text') continue;
+    const content = m.content?.trim();
+    if (content) return content.length > 50 ? content.slice(0, 47).trim() + '…' : content;
+  }
+  return null;
+}
+
+export default function DashboardClientPage({
+    sessionId,
     initialMessages
-}: { 
-    sessionId: string; 
+}: {
+    sessionId: string;
     initialMessages: Message[];
 }) {
   const [user, setUser] = useState<User | null>(null);
-  const [messages, setMessages] = useState<Message[]>(initialMessages); 
+  const [messages, setMessages] = useState<Message[]>(() => normalizeMessages(initialMessages));
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeAnalysis, setActiveAnalysis] = useState<AnalysisResult | null>(null);
-  const [showFullAnalysis, setShowFullAnalysis] = useState(false);
-  const [focusedFlagId, setFocusedFlagId] = useState<string | null>(null);
   const [showSenderConfig, setShowSenderConfig] = useState(false);
   const [userPosition, setUserPosition] = useState<'left' | 'right'>('right');
   const supabase = createClient();
+  const router = useRouter();
   const isInitialMount = useRef(true);
+  const titleSetRef = useRef(false);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -51,25 +79,24 @@ export default function DashboardClientPage({
     fetchUser();
   }, [supabase.auth]);
 
-  // FIX: Define saveChatHistory BEFORE the useEffect that uses it.
-  // We use useCallback to ensure the function reference remains stable.
+  // Background save of the chat history. Best-effort: failures here don't
+  // affect the live chat experience, so we log details but don't toast.
   const saveChatHistory = useCallback(async (currentMessages: Message[]) => {
-      // Don't save if there's no session or the message list is empty/default.
       if (!sessionId || !user || currentMessages.length === 0 || (currentMessages.length === 1 && currentMessages[0].id === '1')) return;
 
       try {
-          // Prepare messages for storage, converting Date objects to ISO strings
-          // and linking analysis results by ID instead of embedding the whole object.
-          const messagesToStore = currentMessages.map(msg => ({
-              ...msg,
-              timestamp: msg.timestamp.toISOString(),
-              // If there's an analysisResult, only store its ID.
-              analysisResult: undefined, 
-              analysisResultId: msg.analysisResult?.id,
-          }));
-          
-          // Upsert the entire message history for the session.
-          // 'onConflict' ensures that if a record for this session_id already exists, it gets updated.
+          const messagesToStore = currentMessages.map(msg => {
+              const ts = msg.timestamp instanceof Date
+                ? msg.timestamp
+                : new Date(msg.timestamp as any);
+              return {
+                  ...msg,
+                  timestamp: isNaN(ts.getTime()) ? new Date().toISOString() : ts.toISOString(),
+                  analysisResult: undefined,
+                  analysisResultId: msg.analysisResult?.id,
+              };
+          });
+
           const { error } = await supabase.from('chat_history').upsert({
               session_id: sessionId,
               user_id: user.id,
@@ -77,12 +104,12 @@ export default function DashboardClientPage({
           }, { onConflict: 'session_id' });
 
           if (error) throw error;
-
-          console.log("Chat history saved successfully.");
-
-      } catch (error) {
-          console.error("Error saving chat history:", error);
-          toast.error("Could not save chat history.");
+      } catch (error: any) {
+          console.warn(
+            "Background chat history save failed:",
+            error?.message || error,
+            { code: error?.code, details: error?.details, hint: error?.hint }
+          );
       }
   }, [sessionId, user, supabase]);
 
@@ -106,7 +133,8 @@ export default function DashboardClientPage({
 
   // When the session ID changes, reset messages to the new initial messages
   useEffect(() => {
-    setMessages(initialMessages);
+    setMessages(normalizeMessages(initialMessages));
+    titleSetRef.current = false;
     // AND, find the most recent analysis in the loaded history and set it as active.
     const lastAnalysisResult = [...initialMessages]
         .reverse()
@@ -119,6 +147,37 @@ export default function DashboardClientPage({
         setActiveAnalysis(null);
     }
   }, [initialMessages, sessionId]);
+
+  // Auto-name the session in the sidebar based on the first real user message.
+  // Only updates while the title is still the default ("New Chat"), so we don't
+  // overwrite anything the user (or AI) renamed later.
+  useEffect(() => {
+    if (titleSetRef.current || !sessionId || !user) return;
+    const candidate = deriveSessionTitle(messages);
+    if (!candidate) return;
+
+    titleSetRef.current = true;
+    (async () => {
+      const { data, error } = await supabase
+        .from('chat_sessions')
+        .update({ title: candidate })
+        .eq('id', sessionId)
+        .eq('user_id', user.id)
+        .eq('title', 'New Chat')
+        .select('id')
+        .maybeSingle();
+
+      if (error) {
+        console.warn('Failed to auto-rename chat session:', error.message);
+        titleSetRef.current = false; // allow retry next time
+        return;
+      }
+      if (data) {
+        // Tell the sidebar to refresh.
+        window.dispatchEvent(new CustomEvent('chat-session-renamed'));
+      }
+    })();
+  }, [messages, sessionId, user, supabase]);
 
   const saveAnalysisResult = async (result: AnalysisResult, session_id: string): Promise<string | null> => {
     if (!user) return null;
@@ -230,12 +289,18 @@ export default function DashboardClientPage({
 
   const handleViewFullAnalysis = (result: AnalysisResult, focusFlagId?: string): void => {
     setActiveAnalysis(result);
-    setFocusedFlagId(focusFlagId || null);
-    setShowFullAnalysis(true);
+    if (!result.id) {
+      toast.error('Analysis is not ready to open yet. Please wait a moment.');
+      return;
+    }
+    const url = focusFlagId
+      ? `/dashboard/analysis/${result.id}?focus=${encodeURIComponent(focusFlagId)}`
+      : `/dashboard/analysis/${result.id}`;
+    router.push(url);
   };
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 h-full flex items-center justify-center bg-gray-50">
+    <div className="p-4 sm:p-6 lg:p-8 h-full flex items-center justify-center bg-stone-100">
         <div className="w-full max-w-4xl h-full">
             <ChatInterface
               sessionId={sessionId}
@@ -255,18 +320,6 @@ export default function DashboardClientPage({
                 userPosition={userPosition}
                 onPositionChange={setUserPosition}
                 onClose={() => setShowSenderConfig(false)}
-            />
-        )}
-
-        {showFullAnalysis && activeAnalysis && user && (
-            <AnalysisDashboard
-                user={user}
-                result={activeAnalysis}
-                onClose={() => {
-                    setShowFullAnalysis(false);
-                    setFocusedFlagId(null);
-                }}
-                focusedFlagId={focusedFlagId}
             />
         )}
     </div>

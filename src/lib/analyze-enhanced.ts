@@ -39,16 +39,17 @@ interface MessageFlow {
 // --- MAIN ANALYSIS FUNCTION ---
 export async function analyzeConversationWithContext(
   messages: ChatMessage[],
-  metadata?: { platform?: string; userPosition?: 'left' | 'right'; }
+  metadata?: { platform?: string; userPosition?: 'left' | 'right'; userName?: string | null; }
 ): Promise<AnalysisResult> {
-  
+
   // Validate input
   if (!messages || messages.length === 0) {
     throw new Error('No messages provided for analysis');
   }
 
   const context = createEnhancedConversationContext(messages);
-  
+  const userName = metadata?.userName?.trim() || null;
+
   // Perform all analyses in parallel for efficiency
   const [
     flagsResult,
@@ -58,7 +59,7 @@ export async function analyzeConversationWithContext(
   ] = await Promise.all([
     detectFlagsWithContextualAI(messages, context),
     analyzeConsistencyWithAI(messages, context),
-    performComprehensiveAIAnalysis(messages, context),
+    performComprehensiveAIAnalysis(messages, context, userName),
     analyzeBehavioralPatterns(messages, context)
   ]);
 
@@ -66,11 +67,12 @@ export async function analyzeConversationWithContext(
 
   // Enrich flags with deep contextual insights
   const enrichedRedFlags = await enrichFlagsWithAIContext(
-    rawRedFlags, 
-    messages, 
-    context, 
+    rawRedFlags,
+    messages,
+    context,
     comprehensiveAnalysis.communicationPatterns,
-    behavioralPatterns
+    behavioralPatterns,
+    userName
   );
   
   return {
@@ -573,16 +575,24 @@ function getDefaultConsistencyAnalysis() {
 
 // --- COMPREHENSIVE ANALYSIS WITH PSYCHOLOGICAL INSIGHTS ---
 async function performComprehensiveAIAnalysis(
-  messages: ChatMessage[], 
-  context: ConversationContext
+  messages: ChatMessage[],
+  context: ConversationContext,
+  userName: string | null = null
 ): Promise<any> {
-  const conversationTranscript = messages.map((msg, i) => 
+  const conversationTranscript = messages.map((msg, i) =>
     `[${i}] ${msg.sender.toUpperCase()}: ${msg.content}`
   ).join('\n');
-  
+
+  const firstName = userName ? userName.split(/\s+/)[0] : null;
+  const voiceInstruction = firstName
+    ? `For any text shown to the reader (suggestedResponses, summary text), speak directly to them. Use "you". You may use "${firstName}" sparingly for warmth. NEVER use "the user" or third-person references to the reader.`
+    : `For any text shown to the reader (suggestedResponses, summary text), speak directly to them using "you". NEVER use "the user" or third-person references to the reader.`;
+
   const prompt = `
     You are a senior psychologist and dating safety expert. Perform a comprehensive analysis of this conversation.
-    
+
+    VOICE (STRICT): ${voiceInstruction}
+
     METADATA:
     - Duration: ${context.conversationDuration}
     - Total Messages: ${context.totalMessages}
@@ -727,18 +737,19 @@ function getDefaultComprehensiveAnalysis(context: ConversationContext) {
 
 // --- ENRICHMENT WITH CONTEXTUAL ADVICE ---
 async function enrichFlagsWithAIContext(
-  rawFlags: Flag[], 
-  messages: ChatMessage[], 
-  context: ConversationContext, 
+  rawFlags: Flag[],
+  messages: ChatMessage[],
+  context: ConversationContext,
   communicationPatterns: any,
-  behavioralPatterns: any
+  behavioralPatterns: any,
+  userName: string | null = null
 ): Promise<Flag[]> {
   if (rawFlags.length === 0) return [];
-  
-  const conversationTranscript = messages.map(msg => 
+
+  const conversationTranscript = messages.map(msg =>
     `${msg.sender.toUpperCase()}: ${msg.content}`
   ).join('\n');
-  
+
   const flagsToAnalyze = rawFlags.map(flag => ({
     id: flag.id,
     category: flag.category,
@@ -747,40 +758,51 @@ async function enrichFlagsWithAIContext(
     evidence: flag.evidence
   }));
 
+  const firstName = userName ? userName.split(/\s+/)[0] : null;
+  const voiceInstruction = firstName
+    ? `Speak directly to the reader, whose first name is ${firstName}. Use "you" throughout. You may use "${firstName}" sparingly (at most once per field) for warmth — never in a clinical way. NEVER write "the user", "they should", "the person reading this", or any third-person reference to the reader.`
+    : `Speak directly to the reader. Use "you" throughout. NEVER write "the user", "they should", "the person reading this", or any third-person reference to the reader. Refer to the other person in the chat as "this person", "they", or "your match".`;
+
   const prompt = `
-    As a dating safety expert and therapist, provide detailed, actionable advice for each identified pattern.
-    
+    You are a dating safety expert and supportive friend. Provide detailed, actionable advice for each identified pattern.
+
+    VOICE & TONE (STRICT):
+    ${voiceInstruction}
+    - Keep each field concise: one to two short sentences max. No lists inside fields.
+    - Tone: warm, direct, calm. Not clinical, not preachy.
+    - Plain English. No jargon like "boundaries enforcement" or "psychological progression".
+
     CONVERSATION CONTEXT:
     - Duration: ${context.conversationDuration}
     - Communication Balance: ${communicationPatterns?.reciprocity?.balanceScore || 50}/100
     - Behavioral Profile: ${JSON.stringify(behavioralPatterns || {})}
-    
+
     CONVERSATION:
     ${conversationTranscript}
-    
+
     FLAGS TO ANALYZE:
     ${JSON.stringify(flagsToAnalyze, null, 2)}
-    
+
     For each flag, provide:
-    
+
     {
       "FLAG_ID": {
-        "meaning": "Detailed explanation of why this is concerning/positive in the context of online dating and this specific conversation",
-        "psychological_insight": "What this reveals about the person's potential intentions or personality",
-        "whatToDo": "Specific, actionable steps the user should take (be direct and protective)",
-        "boundary_suggestion": "How to set appropriate boundaries if continuing contact",
+        "meaning": "Short explanation of what's happening here — addressed to the reader as 'you'.",
+        "psychological_insight": "What this likely says about their intentions — written to you, in plain English.",
+        "whatToDo": "One or two short sentences of direct action you can take. Start with a verb (e.g., 'Ask...', 'Wait...', 'Don't share...'). Never start with 'The user'.",
+        "boundary_suggestion": "How you might set a limit here — one short sentence.",
         "safety_level": "immediate_danger|high_caution|moderate_caution|low_concern|positive_sign",
         "aiSuggestedReply": {
-          "content": "A safe, assertive response that addresses the concern",
+          "content": "A reply you (the reader) could send — first person, written as if you're typing it.",
           "tone": "assertive|friendly|cautious|firm|supportive",
-          "purpose": "What this response aims to achieve"
+          "purpose": "What this reply does, in one short phrase."
         },
-        "additional_questions": ["Questions to ask to clarify intentions or test authenticity"],
-        "exit_strategy": "If high risk, how to safely end communication"
+        "additional_questions": ["Short questions you could ask to test what they're really after"],
+        "exit_strategy": "If you decide to step away, a short sentence on how to do it cleanly."
       }
     }
-    
-    Be direct about safety concerns. User safety is the top priority.
+
+    Be direct about safety concerns. Your safety is the top priority.
     Return ONLY the JSON object.
   `;
   

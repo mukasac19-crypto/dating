@@ -103,7 +103,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No valid messages found' }, { status: 400 });
     }
 
-    const analysisResult = await analyzeConversationWithContext(messages, analysisMetadata);
+    const { data: profileRow } = await supabase
+      .from('profiles')
+      .select('full_name, username')
+      .eq('id', user.id)
+      .maybeSingle();
+    const userName =
+      profileRow?.full_name?.trim() ||
+      profileRow?.username?.trim() ||
+      user.email?.split('@')[0] ||
+      null;
+
+    const analysisResult = await analyzeConversationWithContext(messages, {
+      ...analysisMetadata,
+      userName,
+    });
 
     if (isWhatsApp && analysisMetadata.harassmentIndicators) {
       const { callCount, thirdPartyContact } = analysisMetadata.harassmentIndicators;
