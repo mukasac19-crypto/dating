@@ -241,7 +241,7 @@ function AnalysisSummaryCard({ result, onViewFull }: { result: AnalysisResult; o
       </button>
 
       <p className="relative mt-3 text-[11px] text-slate-500 text-center">
-        Ask about any flag below — I'll link to it directly.
+        Ask about any flag below — I&apos;ll link to it directly.
       </p>
     </div>
   );
