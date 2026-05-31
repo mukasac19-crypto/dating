@@ -78,7 +78,7 @@ const steps = [
   },
   {
     n: '03',
-    title: 'You get a verdict',
+    title: 'You get a verdict in seconds and many more',
     body: 'One clear label. The top 3 things to know. What to do next. Under a minute.',
   },
 ];
