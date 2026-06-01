@@ -109,6 +109,10 @@ export default function ProfilePage() {
             if (fresh) setProfile(fresh);
             // Tell the sidebar to refresh its plan badge.
             window.dispatchEvent(new CustomEvent('subscription-updated'));
+            // Invalidate the router cache so already-visited (locked) analysis
+            // pages re-render with the new premium status instead of serving a
+            // stale cached copy.
+            router.refresh();
             if (justPaid && fresh?.subscription === 'premium') {
               toast.success('Welcome to Premium! Your analyses are unlocked.');
             }
@@ -119,7 +123,7 @@ export default function ProfilePage() {
       }
     };
     fetchData();
-  }, [supabase]);
+  }, [supabase, router]);
 
   const handleUpdateProfile = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
