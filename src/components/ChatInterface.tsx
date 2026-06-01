@@ -7,7 +7,6 @@ import {
   PaperAirplaneIcon,
   PhotoIcon,
   UserIcon,
-  SparklesIcon,
   ShieldCheckIcon,
 } from '@heroicons/react/24/outline';
 import {
@@ -536,7 +535,7 @@ export default function ChatInterface({
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 flex items-center justify-center shadow-md shadow-indigo-500/25 flex-shrink-0">
-                <SparklesIcon className="w-5 h-5 text-white" />
+                <ShieldCheck className="w-5 h-5 text-white" />
               </div>
               <div className="min-w-0">
                 <h3 className="text-base font-semibold tracking-tight text-slate-900">Swipe Safe AI</h3>
@@ -594,7 +593,7 @@ export default function ChatInterface({
                       </div>
                     ) : (
                       <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-indigo-700 flex items-center justify-center flex-shrink-0 shadow-sm shadow-indigo-500/20">
-                        <SparklesIcon className="w-4 h-4 text-white" />
+                        <ShieldCheck className="w-4 h-4 text-white" />
                       </div>
                     )}
                     <div className={`rounded-2xl px-4 py-2.5 ${
@@ -630,7 +629,7 @@ export default function ChatInterface({
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-start">
               <div className="flex items-start gap-2.5">
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-indigo-700 flex items-center justify-center flex-shrink-0">
-                  <SparklesIcon className="w-4 h-4 text-white" />
+                  <ShieldCheck className="w-4 h-4 text-white" />
                 </div>
                 <div className="bg-white ring-1 ring-stone-200 rounded-2xl rounded-tl-md px-4 py-3">
                   <div className="flex gap-1.5">

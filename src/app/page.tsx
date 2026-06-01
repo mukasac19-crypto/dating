@@ -17,6 +17,7 @@ import {
   MessageCircle,
   Clock,
   Zap,
+  Star,
 } from 'lucide-react';
 import UpgradeButton from '@/components/UpgradeButton';
 import Logo from '@/components/Logo';
@@ -123,6 +124,7 @@ export default function HomePage() {
         <Benefits />
         <HowItWorks />
         <Personas />
+        <Testimonials />
         <Pricing />
         <Privacy />
         <Faq />
@@ -540,6 +542,95 @@ function Personas() {
         </div>
       </div>
     </section>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Testimonials                                                              */
+/* -------------------------------------------------------------------------- */
+
+const testimonials = [
+  {
+    quote:
+      "I almost sent money to someone who seemed perfect. Swipe Safe flagged the inconsistencies in his story before I did anything I'd regret.",
+    name: 'Mara',
+    detail: 'Matched on Hinge',
+  },
+  {
+    quote:
+      'It caught the love-bombing I was completely falling for. The “take it slow” verdict was the wake-up call I needed.',
+    name: 'Daniel',
+    detail: 'Matched on Tinder',
+  },
+  {
+    quote:
+      'I pasted a week of messages and it showed me exactly where he kept dodging real questions. Eerily accurate.',
+    name: 'Aisha',
+    detail: 'Matched on Bumble',
+  },
+  {
+    quote:
+      'The suggested replies are gold. I knew something felt off — this told me why, in plain English.',
+    name: 'Chris',
+    detail: 'WhatsApp chat',
+  },
+];
+
+function Testimonials() {
+  // Duplicate the list so the marquee can loop seamlessly (animate to -50%).
+  const row = [...testimonials, ...testimonials];
+  return (
+    <section className="py-20 sm:py-28 bg-white border-y border-stone-200/70 overflow-hidden">
+      <div className="mx-auto max-w-7xl px-6 lg:px-8">
+        <SectionHeader
+          eyebrow="Real stories"
+          title="People date with more confidence."
+          subtitle="What users tell us after running their first analysis."
+        />
+      </div>
+
+      <div className="mt-12 sm:mt-16 [mask-image:linear-gradient(to_right,transparent,black_8%,black_92%,transparent)] [-webkit-mask-image:linear-gradient(to_right,transparent,black_8%,black_92%,transparent)]">
+        <motion.div
+          className="flex gap-5 w-max px-3"
+          animate={{ x: ['0%', '-50%'] }}
+          transition={{ duration: 32, ease: 'linear', repeat: Infinity }}
+        >
+          {row.map((t, i) => (
+            <TestimonialCard key={i} {...t} />
+          ))}
+        </motion.div>
+      </div>
+    </section>
+  );
+}
+
+function TestimonialCard({
+  quote,
+  name,
+  detail,
+}: {
+  quote: string;
+  name: string;
+  detail: string;
+}) {
+  return (
+    <figure className="w-[300px] sm:w-[360px] flex-shrink-0 rounded-3xl bg-stone-50 ring-1 ring-stone-200 p-6 shadow-sm">
+      <div className="flex gap-0.5 text-amber-400">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Star key={i} className="w-4 h-4 fill-current" />
+        ))}
+      </div>
+      <blockquote className="mt-4 text-slate-700 leading-relaxed">“{quote}”</blockquote>
+      <figcaption className="mt-5 flex items-center gap-3">
+        <div className="w-9 h-9 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-semibold text-sm">
+          {name.charAt(0)}
+        </div>
+        <div>
+          <div className="text-sm font-semibold text-slate-900">{name}</div>
+          <div className="text-xs text-slate-500">{detail}</div>
+        </div>
+      </figcaption>
+    </figure>
   );
 }
 
