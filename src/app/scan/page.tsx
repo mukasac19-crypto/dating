@@ -46,7 +46,7 @@ export default function ScanPage() {
     <div className="min-h-screen bg-stone-50 text-slate-900 antialiased selection:bg-indigo-200/60">
       {/* Minimal header — no nav, keep focus on the CTA */}
       <header className="mx-auto max-w-3xl px-6 pt-6 flex items-center justify-between">
-        <Logo className="h-9 w-auto" />
+        <Logo className="h-14 w-auto" />
         <Link href="/login" className="text-sm font-medium text-slate-500 hover:text-slate-800">
           Sign in
         </Link>

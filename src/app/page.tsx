@@ -143,9 +143,9 @@ function Header() {
   return (
     <header className="sticky top-0 z-50 bg-stone-50/80 backdrop-blur-md border-b border-stone-200/70">
       <div className="mx-auto max-w-7xl px-6 lg:px-8">
-        <nav className="flex items-center justify-between h-16">
+        <nav className="flex items-center justify-between h-20">
           <Link href="/" className="flex items-center">
-            <Logo className="h-11 w-auto" />
+            <Logo className="h-16 w-auto" />
           </Link>
 
           <div className="hidden md:flex items-center gap-8">

@@ -177,8 +177,8 @@ export default function ChatHistorySidebar() {
   return (
     <div className="bg-stone-50 border-r border-stone-200/70 h-full flex flex-col w-64">
       {/* Brand mark */}
-      <div className="px-4 py-4 flex items-center border-b border-stone-200/70">
-        <Logo className="h-9 w-auto" />
+      <div className="px-4 py-3 flex items-center border-b border-stone-200/70">
+        <Logo className="h-14 w-auto" />
       </div>
 
       {/* New chat CTA */}
