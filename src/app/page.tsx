@@ -19,6 +19,7 @@ import {
   Zap,
 } from 'lucide-react';
 import UpgradeButton from '@/components/UpgradeButton';
+import Logo from '@/components/Logo';
 import { PREMIUM_PLAN, FREE_PLAN } from '@/lib/plan';
 
 /* -------------------------------------------------------------------------- */
@@ -141,11 +142,8 @@ function Header() {
     <header className="sticky top-0 z-50 bg-stone-50/80 backdrop-blur-md border-b border-stone-200/70">
       <div className="mx-auto max-w-7xl px-6 lg:px-8">
         <nav className="flex items-center justify-between h-16">
-          <Link href="/" className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 flex items-center justify-center shadow-sm">
-              <ShieldCheck className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-lg font-semibold tracking-tight">Swipe Safe</span>
+          <Link href="/" className="flex items-center">
+            <Logo className="h-11 w-auto" />
           </Link>
 
           <div className="hidden md:flex items-center gap-8">
@@ -425,17 +423,11 @@ function PlatformStrip() {
         <p className="text-center text-xs sm:text-sm font-medium uppercase tracking-wider text-slate-500">
           Works with every chat you can screenshot
         </p>
-        <div className="mt-6 flex justify-center items-center gap-x-8 sm:gap-x-12 grayscale opacity-70 flex-wrap gap-y-4">
+        <div className="mt-6 flex justify-center items-center gap-x-8 sm:gap-x-12 flex-wrap gap-y-4">
           <Image src="/images/apps/tinder.png" alt="Tinder" width={90} height={32} className="h-7 sm:h-8 w-auto" />
           <Image src="/images/apps/Bumble.png" alt="Bumble" width={90} height={32} className="h-7 sm:h-8 w-auto" />
           <Image src="/images/apps/hinge.png" alt="Hinge" width={90} height={28} className="h-6 sm:h-7 w-auto" />
-          <Image
-            src="https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/WhatsApp.svg/1024px-WhatsApp.svg.png"
-            alt="WhatsApp"
-            width={90}
-            height={32}
-            className="h-7 sm:h-8 w-auto"
-          />
+          <Image src="/images/apps/Whatsapp.png" alt="WhatsApp" width={90} height={32} className="h-7 sm:h-8 w-auto" />
           <Image src="/images/apps/imessage.png" alt="iMessage" width={90} height={28} className="h-6 sm:h-7 w-auto" />
         </div>
       </div>

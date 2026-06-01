@@ -78,15 +78,15 @@ export default function AnalysisView({ analysis, firstName }: Props) {
     }
   }, [focusFlagId]);
 
-  const summaryText = useMemo(
-    () => buildSummary(verdict.title, verdict.oneLine, topThings, nextSteps),
-    [verdict, topThings, nextSteps]
+  const fullReport = useMemo(
+    () => buildFullReport(verdict, analysis, allPlainFlags, nextSteps),
+    [verdict, analysis, allPlainFlags, nextSteps]
   );
 
   const onCopy = async () => {
     try {
-      await navigator.clipboard.writeText(summaryText);
-      toast.success('Summary copied. Paste it to a friend.');
+      await navigator.clipboard.writeText(fullReport);
+      toast.success('Full analysis copied. Paste it anywhere.');
       setShowShare(false);
     } catch {
       toast.error("Couldn't copy. Try selecting the text instead.");
@@ -97,8 +97,8 @@ export default function AnalysisView({ analysis, firstName }: Props) {
     if (typeof navigator !== 'undefined' && (navigator as any).share) {
       try {
         await (navigator as any).share({
-          title: 'Swipe Safe analysis',
-          text: summaryText,
+          title: 'Swipe Safe — full analysis',
+          text: fullReport,
         });
         setShowShare(false);
         return;
@@ -168,7 +168,7 @@ export default function AnalysisView({ analysis, firstName }: Props) {
             onCopy={onCopy}
             onShare={onShare}
             onPrint={onPrint}
-            summary={summaryText}
+            summary={fullReport}
           />
         )}
       </AnimatePresence>
@@ -870,9 +870,10 @@ function ShareSheet({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mx-auto w-10 h-1 bg-stone-300 rounded-full sm:hidden mb-4" />
-        <h3 className="text-lg font-semibold text-slate-900">Send this to a friend</h3>
+        <h3 className="text-lg font-semibold text-slate-900">Share your full analysis</h3>
         <p className="text-sm text-slate-600 mt-1">
-          A short, shareable summary — no chat content included.
+          The complete report — verdict, scores, every flag with what it means and what to do.
+          Note: this includes quotes from the conversation.
         </p>
 
         <pre className="mt-4 max-h-40 overflow-y-auto rounded-2xl bg-stone-50 ring-1 ring-stone-200 p-3 text-xs text-slate-700 whitespace-pre-wrap font-sans leading-relaxed">
@@ -953,29 +954,76 @@ function lowerFirst(s: string): string {
   return s.charAt(0).toLowerCase() + s.slice(1);
 }
 
-function buildSummary(
-  title: string,
-  oneLine: string,
-  topThings: PlainFlag[],
+function buildFullReport(
+  verdict: VerdictMeta,
+  analysis: AnalysisResult,
+  allFlags: PlainFlag[],
   nextSteps: string[]
 ): string {
   const lines: string[] = [];
-  lines.push(`Swipe Safe verdict: ${title}.`);
-  lines.push(oneLine);
-  if (topThings.length > 0) {
-    lines.push('');
-    lines.push('Top things I noticed:');
-    topThings.forEach((t) => {
-      const mark = t.type === 'green' ? '✓' : '•';
-      lines.push(`  ${mark} ${t.title} — ${t.oneLine}`);
+  const L = (s = '') => lines.push(s);
+  const RULE = '----------------------------------------';
+
+  L('SWIPE SAFE — FULL ANALYSIS');
+  L('========================================');
+  L(`Verdict: ${verdict.title}`);
+  L(verdict.oneLine);
+  try {
+    const d =
+      analysis.createdAt instanceof Date ? analysis.createdAt : new Date(analysis.createdAt);
+    if (!isNaN(d.getTime())) L(`Analyzed: ${d.toLocaleString()}`);
+  } catch {
+    /* no date */
+  }
+  L();
+
+  const red = allFlags.filter((f) => f.type === 'red').length;
+  const green = allFlags.filter((f) => f.type === 'green').length;
+  L('SCORES');
+  L(RULE);
+  L(`Risk:     ${analysis.riskScore ?? 0}/100  (how worrying it looks)`);
+  L(`Trust:    ${analysis.trustScore ?? 0}/100  (positive signals)`);
+  L(`Pressure: ${analysis.escalationIndex ?? 0}/100  (how fast things move)`);
+  L(`Flags:    ${red} red, ${green} green`);
+  L();
+
+  if (allFlags.length > 0) {
+    L('WHAT WE NOTICED');
+    L(RULE);
+    allFlags.forEach((flag, i) => {
+      const f = flag.raw;
+      const tag =
+        flag.type === 'green'
+          ? 'GREEN FLAG'
+          : `RED FLAG${flag.severity ? ` · ${flag.severity.toUpperCase()}` : ''}`;
+      L(`${i + 1}. [${tag}] ${flag.title}`);
+      if (flag.oneLine) L(`   ${flag.oneLine}`);
+      if (f.evidence) L(`   Their words: "${f.evidence}"`);
+      if (f.meaning) L(`   The pattern: ${f.meaning}`);
+      if (f.psychologicalInsight) L(`   What it likely means: ${f.psychologicalInsight}`);
+      if (f.whatToDo) L(`   What to do: ${f.whatToDo}`);
+      if (f.aiSuggestedReply?.content) L(`   Suggested reply: "${f.aiSuggestedReply.content}"`);
+      if (f.exitStrategy) L(`   If you want to step away: ${f.exitStrategy}`);
+      L();
     });
   }
+
   if (nextSteps.length > 0) {
-    lines.push('');
-    lines.push('What to do next:');
-    nextSteps.forEach((s, i) => {
-      lines.push(`  ${i + 1}. ${s}`);
-    });
+    L('WHAT TO DO NEXT');
+    L(RULE);
+    nextSteps.forEach((s, i) => L(`${i + 1}. ${s}`));
+    L();
   }
+
+  if (analysis.consistencyAnalysis?.summary) {
+    L('CONSISTENCY');
+    L(RULE);
+    L(analysis.consistencyAnalysis.summary);
+    L();
+  }
+
+  L(RULE);
+  L('Generated by Swipe Safe — a second opinion, not a replacement for your instincts.');
+
   return lines.join('\n');
 }

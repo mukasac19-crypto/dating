@@ -8,11 +8,11 @@ import {
   Plus,
   Trash2,
   MessageCircle,
-  ShieldCheck,
   Settings,
   Sparkles,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import Logo from '@/components/Logo';
 import toast from 'react-hot-toast';
 import { User } from '@supabase/supabase-js';
 
@@ -177,13 +177,8 @@ export default function ChatHistorySidebar() {
   return (
     <div className="bg-stone-50 border-r border-stone-200/70 h-full flex flex-col w-64">
       {/* Brand mark */}
-      <div className="px-4 py-4 flex items-center gap-2.5 border-b border-stone-200/70">
-        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 flex items-center justify-center shadow-sm shadow-indigo-500/20">
-          <ShieldCheck className="w-4 h-4 text-white" />
-        </div>
-        <span className="text-base font-semibold tracking-tight text-slate-900">
-          Swipe Safe
-        </span>
+      <div className="px-4 py-4 flex items-center border-b border-stone-200/70">
+        <Logo className="h-9 w-auto" />
       </div>
 
       {/* New chat CTA */}

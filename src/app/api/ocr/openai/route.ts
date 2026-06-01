@@ -48,42 +48,46 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(await file.arrayBuffer());
     const base64Image = buffer.toString('base64');
     
-    // Original Prompt
-    const ocrPrompt = `You are an expert at extracting dating app conversations from screenshots with perfect accuracy.
+    const ocrPrompt = `You are an expert at extracting messaging and dating-app conversations (WhatsApp, iMessage, Tinder, Bumble, Hinge, Instagram, Snapchat, etc.) from screenshots with perfect accuracy.
 
-CRITICAL INSTRUCTIONS:
-1. Extract EVERY message visible in the screenshot, maintaining exact order
-2. Identify the sender of each message based on visual position and chat bubble style:
-   - Messages on the RIGHT side are typically from the USER (the person taking the screenshot)
-   - Messages on the LEFT side are typically from the MATCH (the other person)
-   - Look for visual cues like different colored chat bubbles, profile pictures, or names
-3. Pay attention to timestamps if visible
-4. Include ALL text, even partial messages at screen edges
-5. Look for any system messages or notifications in the conversation
+#1 RULE — WHO SENT EACH MESSAGE (most important part of this task):
+Every chat app uses the same layout, so decide the sender by HORIZONTAL ALIGNMENT first:
+- A bubble aligned to the RIGHT of the screen was sent by the USER (the person who took the screenshot). These are the colored bubbles (green on WhatsApp, blue on iMessage) and may show double check-marks (✓✓) or "Read"/"Delivered".
+- A bubble aligned to the LEFT was sent by the OTHER PERSON (the MATCH). These are the white/gray bubbles. The other person's name is usually the chat title at the very top.
+Right → "user". Left → "match". Use bubble color and name labels ONLY to confirm — never to override a clear left/right position.
 
-VISUAL ANALYSIS TIPS:
-- Blue/colored bubbles on right = usually USER messages
-- Gray/white bubbles on left = usually MATCH messages
-- Check for "Read" or "Delivered" indicators to confirm message direction
-- Profile pictures or initials can help identify senders
-- Some apps show the match's name at the top
+HANDLING REPLIES / QUOTED MESSAGES (critical — this is where mistakes happen):
+A reply shows a small boxed preview of an EARLIER message at the TOP of a bubble — a colored vertical bar with a name label ("You" or the contact's name) and a snippet of older text. This preview is a QUOTE of a previous message, NOT a new message.
+- Do NOT output the quoted preview as its own message.
+- Do NOT merge the quoted preview text into the reply's content.
+- The real message is ONLY the text BELOW the quoted preview, and its sender is decided purely by which side the WHOLE bubble sits on (right = user, left = match).
+- The "You"/name label inside the quote tells you who originally said the quoted line — it does NOT change who sent the current reply.
 
-Return a JSON object with a "messages" array where each message has:
+OTHER RULES:
+1. Extract every real message top-to-bottom, in order. One bubble = one message (after ignoring quoted-reply previews).
+2. Keep exact wording. NEVER paraphrase, and NEVER combine two separate messages into one.
+3. Capture timestamps if visible.
+4. Ignore UI chrome (headers, date separators like "Today", typing indicators, call icons) — they are not messages.
+
+Return a JSON object:
 {
-  "sender": "user" or "match",
-  "content": "exact message text",
-  "visual_position": "left" or "right" (where it appears on screen),
-  "bubble_color": "color of the message bubble if identifiable",
-  "timestamp": "if visible in the screenshot"
+  "messages": [
+    {
+      "sender": "user" | "match",
+      "content": "exact message text (excluding any quoted-reply preview)",
+      "visual_position": "left" | "right",
+      "bubble_color": "color if identifiable",
+      "timestamp": "if visible"
+    }
+  ],
+  "platform_detected": "WhatsApp/iMessage/Tinder/etc if identifiable",
+  "contact_name": "name shown at the top of the chat, if any",
+  "visual_cues": "how you decided left vs right",
+  "confidence": "high" | "medium" | "low",
+  "extraction_notes": "any ambiguities"
 }
 
-Also include:
-- "platform_detected": "Tinder/Bumble/Hinge/etc if identifiable"
-- "visual_cues": "description of how you identified senders"
-- "confidence": "high/medium/low"
-- "extraction_notes": "any ambiguities or issues"
-
-Extract EVERYTHING - even profile names, ages, or bio snippets if visible. We need the complete context.`;
+Getting the sender right — LEFT = match, RIGHT = user — is the single most important thing. Double-check each message's alignment before you finalize.`;
 
     console.log("Starting OCR extraction...");
     
@@ -127,12 +131,16 @@ Extract EVERYTHING - even profile names, ages, or bio snippets if visible. We ne
     )) {
       console.log("Confidence not high or position mismatch detected. Running verification...");
       
-      const verificationPrompt = `The following messages were extracted from a dating app screenshot...
-      
+      const verificationPrompt = `These messages were extracted from a chat screenshot, but the sender assignments may be wrong. Correct them using these strict rules:
+
+1. SENDER FROM POSITION: if "visual_position" is "right", "sender" MUST be "user". If "visual_position" is "left", "sender" MUST be "match". Fix any message where these disagree.
+2. NO MERGED MESSAGES: if a single "content" clearly contains two different people's lines mashed together (e.g. a question from one person followed by an answer from another), split them into separate messages with the correct sender for each.
+3. NO QUOTED PREVIEWS: if a message is actually just the quoted-reply preview of an earlier message (a snippet repeated from elsewhere with a name label), remove it.
+
 Extracted data:
 ${JSON.stringify(ocrContent, null, 2)}
 
-Return a corrected JSON with just the "messages" array with accurate sender assignments.`;
+Return corrected JSON: { "messages": [ { "sender", "content", "visual_position", "timestamp" } ] }, preserving top-to-bottom order.`;
 
       const verificationResponse = await openai.chat.completions.create({
         model: 'gpt-4o',
@@ -159,12 +167,21 @@ Return a corrected JSON with just the "messages" array with accurate sender assi
       }, { status: 400 });
     }
     
-    const formattedMessages: ChatMessage[] = extractedMessages.map((msg: any, index: number) => ({
-      id: `msg-${Date.now()}-${index}`,
-      sender: msg.sender === 'user' ? 'user' : 'match',
-      content: msg.content.trim(),
-      timestamp: msg.timestamp || new Date(Date.now() - (extractedMessages.length - index) * 60000),
-    }));
+    const formattedMessages: ChatMessage[] = extractedMessages.map((msg: any, index: number) => {
+      // Horizontal alignment is the most reliable sender signal: right = user,
+      // left = match. Trust it over the model's own `sender` label when present.
+      const position = String(msg.visual_position || '').toLowerCase();
+      const senderFromPosition =
+        position === 'right' ? 'user' : position === 'left' ? 'match' : null;
+      const sender = senderFromPosition ?? (msg.sender === 'user' ? 'user' : 'match');
+
+      return {
+        id: `msg-${Date.now()}-${index}`,
+        sender,
+        content: msg.content.trim(),
+        timestamp: msg.timestamp || new Date(Date.now() - (extractedMessages.length - index) * 60000),
+      };
+    });
 
     console.log(`Extracted ${formattedMessages.length} messages. Starting analysis...`);
 
