@@ -20,6 +20,7 @@ import {
   Phone,
   ScanLine,
   Lock,
+  X,
   type LucideIcon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -29,6 +30,7 @@ import { detectWhatsAppFormat } from '@/lib/parsers/whatsapp-parser';
 import { AnalysisResult } from '@/types';
 import { getVerdict, type VerdictMeta } from '@/lib/flag-labels';
 import type { AnalysisPreview } from '@/lib/analysis-preview';
+import { maxImagesFor, PREMIUM_MAX_IMAGES, FREE_MAX_IMAGES } from '@/lib/limits';
 import AssistantMessage from './AssistantMessage';
 
 const ScanningAnalysisLoader = () => {
@@ -302,12 +304,13 @@ interface ChatInterfaceProps {
   sessionId: string;
   messages: Message[];
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
-  onAnalyzeScreenshot: (file: File) => Promise<void>;
+  onAnalyzeScreenshot: (files: File[]) => Promise<void>;
   onAnalyzeText: (text: string) => Promise<void>;
   isProcessing: boolean;
   onOpenAnalysis: (resultId: string, focusFlagId?: string) => void;
   activeAnalysis: AnalysisResult | null;
   setActiveAnalysis: React.Dispatch<React.SetStateAction<AnalysisResult | null>>;
+  isPremium?: boolean;
 }
 
 export default function ChatInterface({
@@ -319,7 +322,8 @@ export default function ChatInterface({
   isProcessing,
   onOpenAnalysis,
   activeAnalysis,
-  setActiveAnalysis
+  setActiveAnalysis,
+  isPremium = false
 }: ChatInterfaceProps) {
   
   const [input, setInput] = useState('');
@@ -327,14 +331,74 @@ export default function ChatInterface({
   const [showSenderModal, setShowSenderModal] = useState(false);
   const [detectedSenders, setDetectedSenders] = useState<string[]>([]);
   const [pendingText, setPendingText] = useState('');
+  // Staged screenshots: attach several before analyzing, like other chat apps.
+  const [pendingImages, setPendingImages] = useState<{ file: File; url: string }[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
-  
+
+  const maxImages = maxImagesFor(isPremium);
+
+  // Revoke object URLs when the component unmounts (avoid memory leaks).
+  const pendingRef = useRef(pendingImages);
+  pendingRef.current = pendingImages;
+  useEffect(() => () => pendingRef.current.forEach((p) => URL.revokeObjectURL(p.url)), []);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isProcessing]); // Scroll when messages OR processing state changes
+
+  // Add screenshots to the staging tray, respecting the per-plan cap.
+  const addImages = (files: File[]) => {
+    if (files.length === 0) return;
+    const remaining = maxImages - pendingImages.length;
+    if (remaining <= 0) {
+      toast.error(
+        isPremium
+          ? `You can attach up to ${PREMIUM_MAX_IMAGES} screenshots.`
+          : `Free accounts can attach up to ${FREE_MAX_IMAGES} screenshots. Upgrade to Premium for more.`
+      );
+      return;
+    }
+    const accepted = files.slice(0, remaining);
+    if (files.length > remaining) {
+      toast.error(`You can add ${remaining} more screenshot${remaining === 1 ? '' : 's'} (max ${maxImages}).`);
+    }
+    setPendingImages((prev) => [
+      ...prev,
+      ...accepted.map((file) => ({ file, url: URL.createObjectURL(file) })),
+    ]);
+  };
+
+  const removeImage = (idx: number) => {
+    setPendingImages((prev) => {
+      const target = prev[idx];
+      if (target) URL.revokeObjectURL(target.url);
+      return prev.filter((_, i) => i !== idx);
+    });
+  };
+
+  const analyzePending = () => {
+    if (pendingImages.length === 0 || isProcessing) return;
+    const files = pendingImages.map((p) => p.file);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: Date.now().toString(),
+        role: 'user',
+        content:
+          files.length > 1
+            ? `📸 Analyzing ${files.length} screenshots…`
+            : '📸 Analyzing screenshot…',
+        timestamp: new Date(),
+        type: 'text',
+      },
+    ]);
+    onAnalyzeScreenshot(files);
+    pendingImages.forEach((p) => URL.revokeObjectURL(p.url));
+    setPendingImages([]);
+  };
 
   const handleFlagClick = (flagId: string) => {
     if (activeAnalysis?.id) {
@@ -424,15 +488,9 @@ export default function ChatInterface({
   };
   
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setMessages(prev => [...prev, { 
-      id: Date.now().toString(), role: 'user', 
-      content: `📸 Analyzing screenshot: ${file.name}`, 
-      timestamp: new Date(), type: 'text'
-    }]);
-    onAnalyzeScreenshot(file);
+    const files = Array.from(e.target.files ?? []);
     e.target.value = '';
+    addImages(files);
   };
 
   const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -443,12 +501,7 @@ export default function ChatInterface({
         const file = items[i].getAsFile();
         if (file) {
           e.preventDefault();
-          setMessages(prev => [...prev, { 
-            id: Date.now().toString(), role: 'user', 
-            content: `📋 Pasted a screenshot for analysis.`, 
-            timestamp: new Date(), type: 'text'
-          }]);
-          onAnalyzeScreenshot(file);
+          addImages([file]);
           return;
         }
       }
@@ -612,12 +665,59 @@ export default function ChatInterface({
               </button>
             )}
           </div>
+          {pendingImages.length > 0 && (
+            <div className="mb-2.5 rounded-2xl bg-stone-50 ring-1 ring-stone-200 p-2.5">
+              <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                {pendingImages.map((img, i) => (
+                  <div key={img.url} className="relative flex-shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={img.url}
+                      alt={`Screenshot ${i + 1}`}
+                      className="w-16 h-16 rounded-lg object-cover ring-1 ring-stone-200"
+                    />
+                    <button
+                      onClick={() => removeImage(i)}
+                      disabled={isProcessing}
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center shadow disabled:opacity-50"
+                      title="Remove"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+                {pendingImages.length < maxImages && (
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isProcessing}
+                    className="flex-shrink-0 w-16 h-16 rounded-lg ring-1 ring-dashed ring-stone-300 text-slate-400 hover:text-indigo-600 hover:ring-indigo-300 flex items-center justify-center transition-colors disabled:opacity-50"
+                    title="Add another screenshot"
+                  >
+                    <PhotoIcon className="w-5 h-5" />
+                  </button>
+                )}
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <span className="text-xs text-slate-500">
+                  {pendingImages.length}/{maxImages} screenshots{!isPremium ? ' · free limit' : ''}
+                </span>
+                <button
+                  onClick={analyzePending}
+                  disabled={isProcessing}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-indigo-600 text-white text-sm font-semibold px-4 py-2 hover:bg-indigo-700 transition-colors disabled:opacity-50"
+                >
+                  <ScanLine className="w-4 h-4" />
+                  Analyze {pendingImages.length} screenshot{pendingImages.length === 1 ? '' : 's'}
+                </button>
+              </div>
+            </div>
+          )}
           <div className="flex items-end gap-2 bg-stone-50 ring-1 ring-stone-200 focus-within:ring-2 focus-within:ring-indigo-500 focus-within:ring-offset-0 rounded-2xl px-2 py-1.5 transition-shadow">
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={isProcessing}
               className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-white rounded-xl transition-colors disabled:opacity-40 flex-shrink-0"
-              title="Upload screenshot"
+              title={isPremium ? 'Upload screenshots' : `Upload up to ${FREE_MAX_IMAGES} screenshots`}
             >
               <PhotoIcon className="w-5 h-5" />
             </button>
@@ -625,6 +725,7 @@ export default function ChatInterface({
               ref={fileInputRef}
               type="file"
               accept="image/*"
+              multiple
               onChange={handleFileSelect}
               className="hidden"
             />

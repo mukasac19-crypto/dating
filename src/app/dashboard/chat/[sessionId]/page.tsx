@@ -131,9 +131,10 @@ export default async function ChatSessionPage({ params }: { params: { sessionId:
   // Pass the fully constructed data to the client component.
   // Note: We no longer need to pass initialAnalysisResult separately.
   return (
-    <DashboardClientPage 
-        sessionId={sessionId} 
+    <DashboardClientPage
+        sessionId={sessionId}
         initialMessages={initialMessages}
+        isPremium={premium}
     />
   );
 }

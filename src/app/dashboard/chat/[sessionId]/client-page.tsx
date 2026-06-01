@@ -59,10 +59,12 @@ function deriveSessionTitle(msgs: Message[]): string | null {
 
 export default function DashboardClientPage({
     sessionId,
-    initialMessages
+    initialMessages,
+    isPremium = false,
 }: {
     sessionId: string;
     initialMessages: Message[];
+    isPremium?: boolean;
 }) {
   const [user, setUser] = useState<User | null>(null);
   const [messages, setMessages] = useState<Message[]>(() => normalizeMessages(initialMessages));
@@ -242,15 +244,16 @@ export default function DashboardClientPage({
     }
   };
   
-  const handleImageSubmit = async (file: File): Promise<void> => {
+  const handleImageSubmit = async (files: File[]): Promise<void> => {
     if (!user) {
         toast.error("You must be logged in.");
         return;
     }
+    if (!files || files.length === 0) return;
     setIsProcessing(true);
     try {
       const formData = new FormData();
-      formData.append('image', file);
+      files.forEach((file) => formData.append('images', file));
       formData.append('sessionId', sessionId);
 
       const response = await fetch('/api/ocr/openai', { method: 'POST', body: formData });
@@ -277,7 +280,7 @@ export default function DashboardClientPage({
   };
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 h-full flex items-center justify-center bg-stone-100">
+    <div className="p-0 sm:p-6 lg:p-8 h-full flex items-center justify-center bg-stone-100">
         <div className="w-full max-w-4xl h-full">
             <ChatInterface
               sessionId={sessionId}
@@ -289,6 +292,7 @@ export default function DashboardClientPage({
               onOpenAnalysis={handleOpenAnalysis}
               activeAnalysis={activeAnalysis}
               setActiveAnalysis={setActiveAnalysis}
+              isPremium={isPremium}
             />
         </div>
         
