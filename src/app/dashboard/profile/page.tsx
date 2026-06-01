@@ -75,21 +75,48 @@ export default function ProfilePage() {
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
 
-      if (user) {
-        const { data: profileData, error } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', user.id)
-          .single();
+      if (!user) {
+        setLoading(false);
+        return;
+      }
 
-        if (error) {
-          toast.error('Could not fetch your profile.');
-          console.error(error);
-        } else {
-          setProfile(profileData);
-        }
+      const { data: profileData, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (error) {
+        toast.error('Could not fetch your profile.');
+        console.error(error);
+      } else {
+        setProfile(profileData);
       }
       setLoading(false);
+
+      // Reconcile with Stripe so a paid plan is reflected even if a webhook was
+      // missed. Run it when returning from checkout, or for any known customer.
+      const justPaid = new URLSearchParams(window.location.search).get('success') === 'true';
+      if (justPaid || profileData?.stripe_customer_id) {
+        try {
+          const res = await fetch('/api/stripe/sync', { method: 'POST' });
+          if (res.ok) {
+            const { data: fresh } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', user.id)
+              .single();
+            if (fresh) setProfile(fresh);
+            // Tell the sidebar to refresh its plan badge.
+            window.dispatchEvent(new CustomEvent('subscription-updated'));
+            if (justPaid && fresh?.subscription === 'premium') {
+              toast.success('Welcome to Premium! Your analyses are unlocked.');
+            }
+          }
+        } catch (err) {
+          console.warn('Subscription sync failed:', err);
+        }
+      }
     };
     fetchData();
   }, [supabase]);

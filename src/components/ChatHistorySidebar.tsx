@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -119,6 +119,34 @@ export default function ChatHistorySidebar() {
       window.removeEventListener('chat-session-renamed', onRenamed);
     };
   }, [supabase]);
+
+  // Keep the plan badge in sync: the sidebar lives in the persistent layout and
+  // doesn't remount on navigation, so refresh the profile when the route changes
+  // or the tab regains focus (e.g. after returning from Stripe checkout).
+  const refreshProfile = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data } = await supabase
+      .from('profiles')
+      .select('full_name, username, subscription, subscription_current_period_end')
+      .eq('id', user.id)
+      .maybeSingle();
+    if (data) setProfile(data);
+  }, [supabase]);
+
+  useEffect(() => {
+    refreshProfile();
+  }, [pathname, refreshProfile]);
+
+  useEffect(() => {
+    const onFocus = () => refreshProfile();
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('subscription-updated', onFocus);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('subscription-updated', onFocus);
+    };
+  }, [refreshProfile]);
 
   const handleDelete = async (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
