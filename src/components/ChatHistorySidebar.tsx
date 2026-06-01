@@ -9,8 +9,10 @@ import {
   Trash2,
   MessageCircle,
   ShieldCheck,
-  ChevronRight,
+  Settings,
+  Sparkles,
 } from 'lucide-react';
+import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import { User } from '@supabase/supabase-js';
 
@@ -23,6 +25,8 @@ interface ChatSession {
 interface Profile {
   full_name: string | null;
   username: string | null;
+  subscription: string | null;
+  subscription_current_period_end: string | null;
 }
 
 export default function ChatHistorySidebar() {
@@ -54,6 +58,19 @@ export default function ChatHistorySidebar() {
     return (namePart[0] || '') + (namePart[1] || '').toUpperCase();
   })();
 
+  const isPremium = profile?.subscription === 'premium';
+
+  // Friendly renewal/plan line shown under the user's name.
+  const planLine = (() => {
+    if (!isPremium) return 'Free plan · Settings';
+    const end = profile?.subscription_current_period_end;
+    if (end) {
+      const d = new Date(end);
+      if (!isNaN(d.getTime())) return `Premium · renews ${format(d, 'MMM d, yyyy')}`;
+    }
+    return 'Premium plan';
+  })();
+
   useEffect(() => {
     let cancelled = false;
 
@@ -74,7 +91,7 @@ export default function ChatHistorySidebar() {
           .order('updated_at', { ascending: false }),
         supabase
           .from('profiles')
-          .select('full_name, username')
+          .select('full_name, username, subscription, subscription_current_period_end')
           .eq('id', user.id)
           .maybeSingle(),
       ]);
@@ -209,21 +226,32 @@ export default function ChatHistorySidebar() {
         )}
       </div>
 
-      {/* User pill */}
+      {/* User pill → Profile & Settings */}
       {user && (
         <div className="p-3 border-t border-stone-200/70">
           <Link
             href="/dashboard/profile"
+            aria-label="Profile & settings"
             className="group flex items-center gap-3 rounded-2xl ring-1 ring-stone-200 bg-white p-2.5 hover:bg-stone-50 transition-colors"
           >
-            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-100 to-indigo-200 text-indigo-700 flex items-center justify-center font-semibold text-xs flex-shrink-0">
-              {initials}
+            <div className="relative flex-shrink-0">
+              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-100 to-indigo-200 text-indigo-700 flex items-center justify-center font-semibold text-xs">
+                {initials}
+              </div>
+              {isPremium && (
+                <span
+                  className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-indigo-600 ring-2 ring-white flex items-center justify-center"
+                  title="Premium"
+                >
+                  <Sparkles className="w-2.5 h-2.5 text-white" />
+                </span>
+              )}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-slate-900 truncate">{displayName}</p>
-              <p className="text-[11px] text-slate-500">View profile</p>
+              <p className="text-[11px] text-slate-500 truncate">{planLine}</p>
             </div>
-            <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-colors flex-shrink-0" />
+            <Settings className="w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-colors flex-shrink-0" />
           </Link>
         </div>
       )}

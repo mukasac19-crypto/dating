@@ -12,54 +12,51 @@ export async function POST(req: Request) {
       return new NextResponse('Unauthorized', { status: 401 });
     }
 
-    // Fetch user's profile to check if they already have a Stripe ID
+    const priceId = process.env.STRIPE_PRICE_ID;
+    if (!priceId) {
+      console.error('Missing STRIPE_PRICE_ID environment variable.');
+      return new NextResponse('Billing is not configured', { status: 500 });
+    }
+
+    const siteUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_SITE_URL;
+    if (!siteUrl) {
+      throw new Error('Missing NEXT_PUBLIC_BASE_URL or NEXT_PUBLIC_SITE_URL environment variable.');
+    }
+    const returnUrl = `${siteUrl}/dashboard/profile`;
+
+    // Fetch the user's profile to see if they already have a Stripe customer.
     const { data: profile } = await supabase
       .from('profiles')
       .select('stripe_customer_id')
       .eq('id', user.id)
       .single();
 
-    const siteUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_SITE_URL;
-
-    if (!siteUrl) {
-      throw new Error('Missing NEXT_PUBLIC_BASE_URL or NEXT_PUBLIC_SITE_URL environment variable.');
-    }
-
-    const returnUrl = `${siteUrl}/dashboard/profile`;
-
-    // SCENARIO 1: User is already a subscriber (has stripe_customer_id)
-    // Send them to the Customer Portal to manage their sub
+    // SCENARIO 1: Existing customer → send them to the Customer Portal to manage
+    // (upgrade, update card, cancel, or resubscribe).
     if (profile?.stripe_customer_id) {
-      const stripeSession = await stripe.billingPortal.sessions.create({
+      const portalSession = await stripe.billingPortal.sessions.create({
         customer: profile.stripe_customer_id,
         return_url: returnUrl,
       });
-
-      return NextResponse.json({ url: stripeSession.url });
+      return NextResponse.json({ url: portalSession.url });
     }
 
-    // SCENARIO 2: User is a new subscriber
-    // Create a Checkout Session
-    const stripeSession = await stripe.checkout.sessions.create({
+    // SCENARIO 2: New subscriber → create a Checkout Session.
+    const checkoutSession = await stripe.checkout.sessions.create({
       mode: 'subscription',
       payment_method_types: ['card'],
       customer_email: user.email,
-      line_items: [
-        {
-          // REPLACE THIS with your actual Price ID from Stripe Dashboard
-          price: 'price_1QjXaUBT4y...', 
-          quantity: 1,
-        },
-      ],
+      line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${returnUrl}?success=true`,
       cancel_url: `${returnUrl}?canceled=true`,
-      metadata: {
-        userId: user.id, // Critical: We pass the Supabase User ID to Stripe
-      },
+      allow_promotion_codes: true,
+      // Stamp the Supabase user id on both the session and the resulting
+      // subscription so the webhook can reliably map events back to this user.
+      metadata: { userId: user.id },
+      subscription_data: { metadata: { userId: user.id } },
     });
 
-    return NextResponse.json({ url: stripeSession.url });
-
+    return NextResponse.json({ url: checkoutSession.url });
   } catch (error) {
     console.error('Stripe Error:', error);
     return new NextResponse('Internal Server Error', { status: 500 });

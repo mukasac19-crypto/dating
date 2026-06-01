@@ -4,6 +4,8 @@ import { createClient } from '../../../../lib/supabase/server';
 import { notFound } from 'next/navigation';
 import DashboardClientPage from './client-page';
 import { AnalysisResult } from '../../../../types';
+import { isPremium } from '@/lib/subscription';
+import { buildAnalysisPreview, type AnalysisPreview } from '@/lib/analysis-preview';
 
 // Define the Message type to match the client-side type
 interface Message {
@@ -13,7 +15,9 @@ interface Message {
   timestamp: Date;
   type?: 'text' | 'analysis';
   analysisResult?: AnalysisResult;
+  analysisPreview?: AnalysisPreview;
   analysisResultId?: string; // This property is in the saved data
+  locked?: boolean;
   flagReferences?: any[];
 }
 
@@ -26,6 +30,15 @@ export default async function ChatSessionPage({ params }: { params: { sessionId:
   if (!user) {
     notFound();
   }
+
+  // Premium gate: non-premium users only ever receive the verdict teaser for
+  // each analysis, never the full result.
+  const { data: profileRow } = await supabase
+    .from('profiles')
+    .select('subscription, subscription_current_period_end')
+    .eq('id', user.id)
+    .maybeSingle();
+  const premium = isPremium(profileRow);
 
   // Fetch the session to get its list of analysis IDs
   const { data: session, error: sessionError } = await supabase
@@ -87,14 +100,21 @@ export default async function ChatSessionPage({ params }: { params: { sessionId:
           timestamp: new Date(msg.timestamp),
         };
 
-        // If the message is an analysis card, find and attach the full analysis object
+        // If the message is an analysis card, attach the full analysis for
+        // premium users, or just the verdict teaser for everyone else.
         if (message.type === 'analysis' && message.analysisResultId) {
           const fullAnalysis = analysisResultsMap.get(message.analysisResultId);
           if (fullAnalysis) {
-            message.analysisResult = fullAnalysis;
+            if (premium) {
+              message.analysisResult = fullAnalysis;
+              message.locked = false;
+            } else {
+              message.analysisPreview = buildAnalysisPreview(fullAnalysis);
+              message.locked = true;
+            }
           }
         }
-        
+
         return message;
       }) 
     : [{ // Default message for a new chat

@@ -18,6 +18,8 @@ import {
   Clock,
   Zap,
 } from 'lucide-react';
+import UpgradeButton from '@/components/UpgradeButton';
+import { PREMIUM_PLAN, FREE_PLAN } from '@/lib/plan';
 
 /* -------------------------------------------------------------------------- */
 /*  Data                                                                      */
@@ -78,7 +80,7 @@ const steps = [
   },
   {
     n: '03',
-    title: 'You get a verdict in seconds and many more',
+    title: 'You get a verdict',
     body: 'One clear label. The top 3 things to know. What to do next. Under a minute.',
   },
 ];
@@ -120,6 +122,7 @@ export default function HomePage() {
         <Benefits />
         <HowItWorks />
         <Personas />
+        <Pricing />
         <Privacy />
         <Faq />
         <FinalCta />
@@ -148,6 +151,9 @@ function Header() {
           <div className="hidden md:flex items-center gap-8">
             <a href="#how-it-works" className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors">
               How it works
+            </a>
+            <a href="#pricing" className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors">
+              Pricing
             </a>
             <a href="#privacy" className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors">
               Privacy
@@ -546,6 +552,91 @@ function Personas() {
 }
 
 /* -------------------------------------------------------------------------- */
+/*  Pricing                                                                   */
+/* -------------------------------------------------------------------------- */
+
+function Pricing() {
+  return (
+    <section id="pricing" className="py-20 sm:py-28">
+      <div className="mx-auto max-w-7xl px-6 lg:px-8">
+        <SectionHeader
+          eyebrow="Pricing"
+          title="One simple plan. Everything unlocked."
+          subtitle="Start free and see the verdict. Go Premium to read the full breakdown — and use every feature without limits."
+        />
+
+        <div className="mt-12 sm:mt-16 grid md:grid-cols-2 gap-5 max-w-4xl mx-auto items-start">
+          {/* Free */}
+          <div className="rounded-3xl bg-white ring-1 ring-stone-200 p-7 sm:p-8 shadow-sm">
+            <h3 className="text-lg font-semibold tracking-tight text-slate-900">{FREE_PLAN.name}</h3>
+            <p className="mt-1 text-sm text-slate-500">{FREE_PLAN.tagline}</p>
+            <div className="mt-5 flex items-baseline gap-1">
+              <span className="text-4xl font-semibold tracking-tight text-slate-900">
+                {FREE_PLAN.priceLabel}
+              </span>
+            </div>
+            <ul className="mt-6 space-y-3">
+              {FREE_PLAN.features.map((f) => (
+                <li key={f} className="flex items-start gap-2.5 text-sm text-slate-700">
+                  <Check className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+                  <span className="leading-relaxed">{f}</span>
+                </li>
+              ))}
+            </ul>
+            <Link
+              href="/dashboard/chat/new"
+              className="mt-7 w-full inline-flex items-center justify-center gap-1.5 rounded-full bg-white ring-1 ring-stone-300 px-5 py-3 text-sm font-semibold text-slate-800 hover:bg-stone-100 transition-colors"
+            >
+              Start free
+            </Link>
+          </div>
+
+          {/* Premium */}
+          <div className="relative rounded-3xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-slate-900 p-7 sm:p-8 text-white shadow-xl shadow-indigo-900/20">
+            <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden rounded-3xl">
+              <div className="absolute -top-16 -right-16 w-52 h-52 rounded-full bg-rose-400/20 blur-3xl" />
+              <div className="absolute -bottom-20 -left-16 w-52 h-52 rounded-full bg-emerald-400/20 blur-3xl" />
+            </div>
+            <div className="relative">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-lg font-semibold tracking-tight">{PREMIUM_PLAN.name}</h3>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 ring-1 ring-white/20 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-indigo-50">
+                  <Sparkles className="w-3 h-3" />
+                  Unlimited
+                </span>
+              </div>
+              <p className="mt-1 text-sm text-indigo-100">{PREMIUM_PLAN.tagline}</p>
+              <div className="mt-5 flex items-baseline gap-1">
+                <span className="text-4xl font-semibold tracking-tight">{PREMIUM_PLAN.priceLabel}</span>
+                <span className="text-indigo-200">{PREMIUM_PLAN.intervalLabel}</span>
+              </div>
+              <ul className="mt-6 space-y-3">
+                {PREMIUM_PLAN.features.map((f) => (
+                  <li key={f} className="flex items-start gap-2.5 text-sm text-indigo-50">
+                    <span className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-white/15 flex items-center justify-center">
+                      <Check className="w-3 h-3 text-emerald-300" />
+                    </span>
+                    <span className="leading-relaxed">{f}</span>
+                  </li>
+                ))}
+              </ul>
+              <UpgradeButton className="group mt-7 w-full inline-flex items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-semibold text-slate-900 hover:bg-stone-100 transition-colors shadow-lg disabled:opacity-70 disabled:cursor-not-allowed">
+                <Sparkles className="w-4 h-4 text-indigo-600" />
+                Get Premium
+                <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+              </UpgradeButton>
+              <p className="mt-3 text-xs text-indigo-200/80 text-center">
+                {PREMIUM_PLAN.blurb} Secure checkout by Stripe.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Privacy                                                                   */
 /* -------------------------------------------------------------------------- */
 
@@ -718,9 +809,12 @@ function Footer() {
 
           <nav className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-600">
             <a href="#how-it-works" className="hover:text-slate-900 transition-colors">How it works</a>
+            <a href="#pricing" className="hover:text-slate-900 transition-colors">Pricing</a>
             <a href="#privacy" className="hover:text-slate-900 transition-colors">Privacy</a>
             <a href="#faq" className="hover:text-slate-900 transition-colors">FAQ</a>
             <Link href="/about" className="hover:text-slate-900 transition-colors">About</Link>
+            <Link href="/privacy" className="hover:text-slate-900 transition-colors">Privacy policy</Link>
+            <Link href="/terms" className="hover:text-slate-900 transition-colors">Terms</Link>
             <Link href="/login" className="hover:text-slate-900 transition-colors">Sign in</Link>
           </nav>
         </div>

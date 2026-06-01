@@ -201,7 +201,11 @@ export type Database = {
           email: string | null
           full_name: string | null
           id: string
+          price_id: string | null
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
           subscription: string
+          subscription_current_period_end: string | null
           updated_at: string | null
           username: string | null
         }
@@ -211,7 +215,11 @@ export type Database = {
           email?: string | null
           full_name?: string | null
           id: string
+          price_id?: string | null
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
           subscription?: string
+          subscription_current_period_end?: string | null
           updated_at?: string | null
           username?: string | null
         }
@@ -221,7 +229,11 @@ export type Database = {
           email?: string | null
           full_name?: string | null
           id?: string
+          price_id?: string | null
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
           subscription?: string
+          subscription_current_period_end?: string | null
           updated_at?: string | null
           username?: string | null
         }

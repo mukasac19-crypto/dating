@@ -3,8 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { analyzeConversationWithContext } from '@/lib/analyze-enhanced';
 import OpenAI from 'openai';
 import { ChatMessage } from '@/types';
-import { Json } from '@/types/supabase';
 import { ocrRatelimit } from '@/lib/rate-limit'; // Keep our rate limiter!
+import { persistAnalysis, gateAnalysisResponse } from '@/lib/save-analysis';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -40,6 +40,7 @@ export async function POST(request: NextRequest) {
 
     const formData = await request.formData();
     const file = formData.get('image') as File | null;
+    const sessionId = (formData.get('sessionId') as string | null) || null;
     if (!file) {
       return NextResponse.json({ error: 'No image file provided.' }, { status: 400 });
     }
@@ -194,29 +195,23 @@ Return a corrected JSON with just the "messages" array with accurate sender assi
       }
     };
 
-    await supabase.from('analysis_results').insert({
-      user_id: user.id,
-      risk_score: analysisResult.riskScore,
-      trust_score: analysisResult.trustScore,
-      escalation_index: analysisResult.escalationIndex,
-      chat_content: JSON.parse(JSON.stringify(analysisResult.chatContent)),
-      flags: JSON.parse(JSON.stringify(analysisResult.flags)),
-      timeline: JSON.parse(JSON.stringify(analysisResult.timeline)),
-      reciprocity_score: JSON.parse(JSON.stringify(analysisResult.reciprocityScore)),
-      consistency_analysis: JSON.parse(JSON.stringify(analysisResult.consistencyAnalysis)),
-      suggested_replies: JSON.parse(JSON.stringify(analysisResult.suggestedReplies)),
-      evidence: JSON.parse(JSON.stringify(analysisResult.evidence)),
-      metadata: { 
-        analysis_type: 'image',
-        ocr_metadata: enrichedResult.ocrMetadata 
-      } as Json,
-    });
-    
-    await supabase.rpc('increment_analysis_count', { user_uuid: user.id });
+    const resultId = await persistAnalysis(
+      supabase,
+      user.id,
+      enrichedResult,
+      { analysis_type: 'image', ocr_metadata: enrichedResult.ocrMetadata },
+      sessionId
+    );
+
+    if (!resultId) {
+      return NextResponse.json({ error: 'Failed to save analysis' }, { status: 500 });
+    }
 
     console.log(`Analysis complete. Risk: ${analysisResult.riskScore}%, Trust: ${analysisResult.trustScore}%`);
 
-    return NextResponse.json({ result: enrichedResult });
+    // Gate the payload by plan (full result for premium, teaser otherwise).
+    const gated = await gateAnalysisResponse(supabase, user.id, resultId, enrichedResult);
+    return NextResponse.json(gated);
 
   } catch (error) {
     console.error('Image analysis error:', error);

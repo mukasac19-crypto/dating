@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import ChatInterface from '@/components/ChatInterface';
 import SenderConfigModal from '@/components/SenderConfigModal';
 import { AnalysisResult } from '@/types';
+import type { AnalysisPreview } from '@/lib/analysis-preview';
 import toast from 'react-hot-toast';
 import { createClient } from '@/lib/supabase/client';
 import type { User } from '@supabase/supabase-js';
@@ -18,6 +19,9 @@ export interface Message {
   timestamp: Date;
   type?: 'text' | 'analysis';
   analysisResult?: AnalysisResult;
+  analysisPreview?: AnalysisPreview;
+  analysisResultId?: string;
+  locked?: boolean;
   flagReferences?: {
     flagId: string;
     text: string;
@@ -92,8 +96,11 @@ export default function DashboardClientPage({
               return {
                   ...msg,
                   timestamp: isNaN(ts.getTime()) ? new Date().toISOString() : ts.toISOString(),
+                  // Never persist the heavy/sensitive result or preview in chat
+                  // history — only the id, so it can be re-fetched and re-gated.
                   analysisResult: undefined,
-                  analysisResultId: msg.analysisResult?.id,
+                  analysisPreview: undefined,
+                  analysisResultId: msg.analysisResultId || msg.analysisResult?.id,
               };
           });
 
@@ -179,65 +186,35 @@ export default function DashboardClientPage({
     })();
   }, [messages, sessionId, user, supabase]);
 
-  const saveAnalysisResult = async (result: AnalysisResult, session_id: string): Promise<string | null> => {
-    if (!user) return null;
-    try {
-      const { 
-        chatContent, consistencyAnalysis, escalationIndex, reciprocityScore,
-        riskScore, trustScore, suggestedReplies, ocrMetadata, createdAt, id,
-        ...restOfResult 
-      } = result;
-
-      const { data: newAnalysis, error: insertError } = await supabase
-        .from('analysis_results')
-        .insert({
-          ...restOfResult, user_id: user.id, chat_content: chatContent,
-          consistency_analysis: consistencyAnalysis, escalation_index: escalationIndex,
-          reciprocity_score: reciprocityScore, risk_score: riskScore,
-          trust_score: trustScore, suggested_replies: suggestedReplies,
-          metadata: ocrMetadata,
-        })
-        .select('id').single();
-
-      if (insertError) throw insertError;
-
-      const { data: sessionData, error: fetchError } = await supabase
-        .from('chat_sessions').select('analysis_ids').eq('id', session_id).single();
-      
-      if (fetchError) throw fetchError;
-      
-      const updated_ids = [...(sessionData.analysis_ids || []), newAnalysis.id];
-      
-      const { error: updateError } = await supabase
-        .from('chat_sessions').update({ analysis_ids: updated_ids }).eq('id', session_id);
-      
-      if (updateError) throw updateError;
-      
-      return newAnalysis.id; // Return the new ID
-
-    } catch (error) {
-        console.error("Error saving analysis result:", error);
-        toast.error("Could not save analysis result. This may be due to a profile synchronization issue.");
-        return null;
-    }
-  };
-  
+  // Analyses are now persisted and gated server-side. The response carries a
+  // resultId plus either the full result (premium) or a verdict-only preview
+  // (locked). The browser never has to write — or even receive — locked data.
   const handleApiResponse = async (data: any): Promise<void> => {
-    const analysisId = await saveAnalysisResult(data.result, sessionId);
-    if (!analysisId) return;
+    const resultId: string | undefined = data?.resultId;
+    if (!resultId) {
+      toast.error('Could not save analysis. Please try again.');
+      return;
+    }
 
-    const savedResult = { ...data.result, id: analysisId };
-    setActiveAnalysis(savedResult);
-
-    const analysisMessage: Message = {
+    const base = {
       id: `analysis-${Date.now()}`,
-      role: 'assistant',
+      role: 'assistant' as const,
       content: '',
       timestamp: new Date(),
-      type: 'analysis',
-      analysisResult: savedResult
+      type: 'analysis' as const,
+      analysisResultId: resultId,
     };
-    setMessages(prev => [...prev, analysisMessage]);
+
+    if (data.locked) {
+      setActiveAnalysis(null);
+      setMessages(prev => [...prev, { ...base, analysisPreview: data.preview, locked: true }]);
+      toast.success('Analysis ready — unlock to view the full breakdown.');
+      return;
+    }
+
+    const fullResult: AnalysisResult = { ...data.result, id: resultId };
+    setActiveAnalysis(fullResult);
+    setMessages(prev => [...prev, { ...base, analysisResult: fullResult, locked: false }]);
     toast.success('Analysis complete! View summary in chat.');
   };
 
@@ -251,7 +228,7 @@ export default function DashboardClientPage({
       const response = await fetch('/api/analyze/text', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, userPosition }),
+        body: JSON.stringify({ text, userPosition, sessionId }),
       });
 
       const data = await response.json();
@@ -274,7 +251,8 @@ export default function DashboardClientPage({
     try {
       const formData = new FormData();
       formData.append('image', file);
-      
+      formData.append('sessionId', sessionId);
+
       const response = await fetch('/api/ocr/openai', { method: 'POST', body: formData });
       if (!response.ok) throw new Error((await response.json()).error || 'Failed to process screenshot.');
 
@@ -287,15 +265,14 @@ export default function DashboardClientPage({
     }
   };
 
-  const handleViewFullAnalysis = (result: AnalysisResult, focusFlagId?: string): void => {
-    setActiveAnalysis(result);
-    if (!result.id) {
+  const handleOpenAnalysis = (resultId: string, focusFlagId?: string): void => {
+    if (!resultId) {
       toast.error('Analysis is not ready to open yet. Please wait a moment.');
       return;
     }
     const url = focusFlagId
-      ? `/dashboard/analysis/${result.id}?focus=${encodeURIComponent(focusFlagId)}`
-      : `/dashboard/analysis/${result.id}`;
+      ? `/dashboard/analysis/${resultId}?focus=${encodeURIComponent(focusFlagId)}`
+      : `/dashboard/analysis/${resultId}`;
     router.push(url);
   };
 
@@ -309,7 +286,7 @@ export default function DashboardClientPage({
               onAnalyzeScreenshot={handleImageSubmit}
               onAnalyzeText={handleTextSubmit}
               isProcessing={isProcessing}
-              onViewFullAnalysis={handleViewFullAnalysis}
+              onOpenAnalysis={handleOpenAnalysis}
               activeAnalysis={activeAnalysis}
               setActiveAnalysis={setActiveAnalysis}
             />

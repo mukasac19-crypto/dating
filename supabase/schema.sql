@@ -11,8 +11,17 @@ CREATE TABLE public.profiles (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   subscription TEXT DEFAULT 'free' CHECK (subscription IN ('free', 'premium')),
   analysis_count INTEGER DEFAULT 0,
+  -- Stripe billing bookkeeping (see migrations/20260531_stripe_billing.sql)
+  stripe_customer_id TEXT,
+  stripe_subscription_id TEXT,
+  price_id TEXT,
+  subscription_current_period_end TIMESTAMP WITH TIME ZONE,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+CREATE UNIQUE INDEX idx_profiles_stripe_customer_id
+  ON public.profiles (stripe_customer_id)
+  WHERE stripe_customer_id IS NOT NULL;
 
 -- Chat History table
 CREATE TABLE public.chat_history (

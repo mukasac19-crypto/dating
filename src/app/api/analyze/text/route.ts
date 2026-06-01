@@ -3,8 +3,8 @@ import { analyzeConversationWithContext } from '@/lib/analyze-enhanced';
 import { redactPersonalInfo } from '@/lib/ocr';
 import { createClient } from '@/lib/supabase/server';
 import { ChatMessage } from '@/types';
-import { Json } from '@/types/supabase';
 import { analysisRatelimit } from '@/lib/rate-limit'; // IMPORT SPECIFIC LIMITER
+import { persistAnalysis, gateAnalysisResponse } from '@/lib/save-analysis';
 import { 
   parseWhatsAppExport, 
   detectWhatsAppFormat, 
@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
     }
     // ------------------------
 
-    const { text, platform, userIdentifier } = await request.json();
+    const { text, platform, userIdentifier, sessionId } = await request.json();
 
     if (!text || typeof text !== 'string') {
       return NextResponse.json({ error: 'Invalid text input' }, { status: 400 });
@@ -154,28 +154,28 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    await supabase.from('analysis_results').insert({
-      user_id: user.id,
-      risk_score: analysisResult.riskScore,
-      trust_score: analysisResult.trustScore,
-      escalation_index: analysisResult.escalationIndex,
-      chat_content: JSON.parse(JSON.stringify(analysisResult.chatContent)),
-      flags: JSON.parse(JSON.stringify(analysisResult.flags)),
-      timeline: JSON.parse(JSON.stringify(analysisResult.timeline)),
-      reciprocity_score: JSON.parse(JSON.stringify(analysisResult.reciprocityScore)),
-      consistency_analysis: JSON.parse(JSON.stringify(analysisResult.consistencyAnalysis)),
-      suggested_replies: JSON.parse(JSON.stringify(analysisResult.suggestedReplies)),
-      evidence: JSON.parse(JSON.stringify(analysisResult.evidence)),
-      metadata: {
+    const resultId = await persistAnalysis(
+      supabase,
+      user.id,
+      analysisResult,
+      {
         ...analysisMetadata,
         message_count: messages.length,
         analysis_type: 'text',
-        platform: isWhatsApp ? 'whatsapp' : 'generic'
-      } as Json,
-    });
+        platform: isWhatsApp ? 'whatsapp' : 'generic',
+      },
+      sessionId
+    );
 
-    return NextResponse.json({ result: analysisResult, metadata: analysisMetadata });
-    
+    if (!resultId) {
+      return NextResponse.json({ error: 'Failed to save analysis' }, { status: 500 });
+    }
+
+    // Gate the payload: premium users get the full result, everyone else gets
+    // only the verdict teaser. The substantive fields never leave the server.
+    const gated = await gateAnalysisResponse(supabase, user.id, resultId, analysisResult);
+    return NextResponse.json({ ...gated, metadata: analysisMetadata });
+
   } catch (error) {
     console.error('Text analysis error:', error);
     return NextResponse.json({ error: 'Failed to analyze conversation' }, { status: 500 });

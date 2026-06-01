@@ -1,3 +1,5 @@
+//src\components\ChatInterface.tsx
+
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
@@ -17,6 +19,7 @@ import {
   Check,
   Phone,
   ScanLine,
+  Lock,
   type LucideIcon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -25,6 +28,7 @@ import { createClient } from '@/lib/supabase/client';
 import { detectWhatsAppFormat } from '@/lib/parsers/whatsapp-parser';
 import { AnalysisResult } from '@/types';
 import { getVerdict, type VerdictMeta } from '@/lib/flag-labels';
+import type { AnalysisPreview } from '@/lib/analysis-preview';
 import AssistantMessage from './AssistantMessage';
 
 const ScanningAnalysisLoader = () => {
@@ -136,7 +140,46 @@ interface Message {
   timestamp: Date;
   type?: 'text' | 'analysis';
   analysisResult?: AnalysisResult;
+  analysisPreview?: AnalysisPreview;
+  analysisResultId?: string;
+  locked?: boolean;
   flagReferences?: FlagReference[];
+}
+
+interface SummaryCardModel {
+  verdict: VerdictMeta;
+  redCount: number;
+  greenCount: number;
+  criticalCount: number;
+  locked: boolean;
+}
+
+// Normalize a finished-analysis message into just what the summary card needs.
+// Premium messages carry the full result; locked ones carry only a preview.
+function toCardModel(message: Message): SummaryCardModel | null {
+  if (message.analysisResult) {
+    const flags = message.analysisResult.flags || [];
+    return {
+      verdict: getVerdict(message.analysisResult),
+      redCount: flags.filter((f) => f.type === 'red').length,
+      greenCount: flags.filter((f) => f.type === 'green').length,
+      criticalCount: flags.filter(
+        (f) => f.severity === 'critical' || f.safetyLevel === 'immediate_danger'
+      ).length,
+      locked: false,
+    };
+  }
+  if (message.analysisPreview) {
+    const p = message.analysisPreview;
+    return {
+      verdict: p.verdict,
+      redCount: p.redCount,
+      greenCount: p.greenCount,
+      criticalCount: p.criticalCount,
+      locked: true,
+    };
+  }
+  return null;
 }
 
 interface FlagReference {
@@ -146,7 +189,7 @@ interface FlagReference {
 }
 
 function formatTime(date: Date): string {
-  return new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return new Date(date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 }
 
 const SUMMARY_VERDICT_ICON: Record<VerdictMeta['level'], LucideIcon> = {
@@ -170,13 +213,8 @@ const SUMMARY_ICON_TINT: Record<VerdictMeta['level'], string> = {
   danger: 'bg-red-600 shadow-red-600/40',
 };
 
-function AnalysisSummaryCard({ result, onViewFull }: { result: AnalysisResult; onViewFull: () => void }) {
-  if (!result) return null;
-  const flags = result.flags || [];
-  const criticalCount = flags.filter(f => f.severity === 'critical' || f.safetyLevel === 'immediate_danger').length;
-  const redCount = flags.filter(f => f.type === 'red').length;
-  const greenCount = flags.filter(f => f.type === 'green').length;
-  const verdict = getVerdict(result);
+function AnalysisSummaryCard({ model, onViewFull }: { model: SummaryCardModel; onViewFull: () => void }) {
+  const { verdict, redCount, greenCount, criticalCount, locked } = model;
   const VerdictIcon = SUMMARY_VERDICT_ICON[verdict.level];
 
   return (
@@ -192,13 +230,13 @@ function AnalysisSummaryCard({ result, onViewFull }: { result: AnalysisResult; o
         </div>
         <div className="flex-1 min-w-0">
           <p className={`text-[10px] font-semibold uppercase tracking-wide ${verdict.tone.accent}`}>
-            Analysis complete
+            {locked ? 'Analysis ready' : 'Analysis complete'}
           </p>
           <h3 className={`mt-0.5 text-lg font-semibold tracking-tight ${verdict.tone.text}`}>
             {verdict.title}
           </h3>
           <p className={`mt-1 text-sm leading-relaxed ${verdict.tone.text} opacity-85`}>
-            {verdict.oneLine}
+            {locked ? 'Unlock to see the full breakdown — every flag, what it means, and what to do.' : verdict.oneLine}
           </p>
 
           {(redCount > 0 || greenCount > 0) && (
@@ -227,7 +265,9 @@ function AnalysisSummaryCard({ result, onViewFull }: { result: AnalysisResult; o
             <span className="font-semibold">
               {criticalCount} critical alert{criticalCount === 1 ? '' : 's'}
             </span>{' '}
-            <span className="opacity-80">— please open the full analysis.</span>
+            <span className="opacity-80">
+              {locked ? '— unlock the full analysis to view.' : '— please open the full analysis.'}
+            </span>
           </span>
         </div>
       )}
@@ -236,12 +276,23 @@ function AnalysisSummaryCard({ result, onViewFull }: { result: AnalysisResult; o
         onClick={onViewFull}
         className="relative mt-4 w-full inline-flex items-center justify-center gap-1.5 rounded-full bg-slate-900 hover:bg-slate-800 px-4 py-2.5 text-sm font-semibold text-white transition-colors shadow-sm"
       >
-        Open full analysis
-        <ArrowRight className="w-4 h-4" />
+        {locked ? (
+          <>
+            <Lock className="w-4 h-4" />
+            Unlock full results
+          </>
+        ) : (
+          <>
+            Open full analysis
+            <ArrowRight className="w-4 h-4" />
+          </>
+        )}
       </button>
 
       <p className="relative mt-3 text-[11px] text-slate-500 text-center">
-        Ask about any flag below — I&apos;ll link to it directly.
+        {locked
+          ? 'Go premium to read the full breakdown.'
+          : 'Ask about any flag below — I’ll link to it directly.'}
       </p>
     </div>
   );
@@ -254,19 +305,19 @@ interface ChatInterfaceProps {
   onAnalyzeScreenshot: (file: File) => Promise<void>;
   onAnalyzeText: (text: string) => Promise<void>;
   isProcessing: boolean;
-  onViewFullAnalysis: (result: AnalysisResult, focusFlagId?: string) => void;
+  onOpenAnalysis: (resultId: string, focusFlagId?: string) => void;
   activeAnalysis: AnalysisResult | null;
   setActiveAnalysis: React.Dispatch<React.SetStateAction<AnalysisResult | null>>;
 }
 
-export default function ChatInterface({ 
+export default function ChatInterface({
   sessionId,
   messages,
   setMessages,
-  onAnalyzeScreenshot, 
-  onAnalyzeText, 
+  onAnalyzeScreenshot,
+  onAnalyzeText,
   isProcessing,
-  onViewFullAnalysis,
+  onOpenAnalysis,
   activeAnalysis,
   setActiveAnalysis
 }: ChatInterfaceProps) {
@@ -286,8 +337,8 @@ export default function ChatInterface({
   }, [messages, isProcessing]); // Scroll when messages OR processing state changes
 
   const handleFlagClick = (flagId: string) => {
-    if (activeAnalysis) {
-      onViewFullAnalysis(activeAnalysis, flagId);
+    if (activeAnalysis?.id) {
+      onOpenAnalysis(activeAnalysis.id, flagId);
     }
   };
 
@@ -471,11 +522,13 @@ export default function ChatInterface({
                 exit={{ opacity: 0 }}
                 className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
-                {message.type === 'analysis' && message.analysisResult ? (
+                {message.type === 'analysis' && toCardModel(message) ? (
                   <div className="w-full max-w-lg">
                     <AnalysisSummaryCard
-                      result={message.analysisResult}
-                      onViewFull={() => onViewFullAnalysis(message.analysisResult!)}
+                      model={toCardModel(message)!}
+                      onViewFull={() =>
+                        message.analysisResultId && onOpenAnalysis(message.analysisResultId)
+                      }
                     />
                   </div>
                 ) : (
@@ -504,7 +557,9 @@ export default function ChatInterface({
                       ) : (
                         <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
                       )}
-                      <p className={`text-[11px] mt-1.5 ${
+                      <p
+                        suppressHydrationWarning
+                        className={`text-[11px] mt-1.5 ${
                         message.role === 'user' ? 'text-indigo-200' : 'text-slate-400'
                       }`}>
                         {formatTime(message.timestamp)}

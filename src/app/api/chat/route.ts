@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 import { createClient } from '@/lib/supabase/server';
 import { DatingSafetyPromptBuilder } from '@/lib/prompt-builder';
 import { chatRatelimit } from '@/lib/rate-limit';
+import { isPremium } from '@/lib/subscription';
 
 const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -51,15 +52,19 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Fetch profile + all session analyses in parallel
-    const [{ data: profile }, sessionAnalyses] = await Promise.all([
-      supabase
-        .from('profiles')
-        .select('full_name, username')
-        .eq('id', user.id)
-        .maybeSingle(),
-      sessionId ? fetchSessionAnalyses(supabase, sessionId, user.id) : Promise.resolve([]),
-    ]);
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('full_name, username, subscription, subscription_current_period_end')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    const premium = isPremium(profile);
+
+    // Only premium users get the analysis content injected into the prompt.
+    // For everyone else it's withheld entirely, so the assistant has nothing
+    // to reveal — the results stay behind the paywall.
+    const sessionAnalyses =
+      premium && sessionId ? await fetchSessionAnalyses(supabase, sessionId, user.id) : [];
 
     const rawName =
       profile?.full_name?.trim() ||
@@ -71,6 +76,7 @@ export async function POST(request: NextRequest) {
     const systemPrompt = buildSystemPrompt({
       firstName,
       analyses: sessionAnalyses,
+      locked: !premium,
     });
 
     // Strip any client-provided system messages (we own that channel now)
@@ -136,9 +142,11 @@ async function fetchSessionAnalyses(
 function buildSystemPrompt({
   firstName,
   analyses,
+  locked = false,
 }: {
   firstName: string | null;
   analyses: any[];
+  locked?: boolean;
 }): string {
   const base = DatingSafetyPromptBuilder.getSystemPrompt();
 
@@ -151,7 +159,11 @@ CONVERSATION MEMORY:
 You have full memory of this chat session. The recent turns of your conversation with ${firstName ?? 'this person'} are below. Reference earlier things they told you naturally — don't make them repeat themselves.`;
 
   let analysesBlock = '';
-  if (analyses.length > 0) {
+  if (locked) {
+    analysesBlock = `
+ANALYSES IN THIS SESSION:
+${firstName ?? 'The reader'} has run an analysis, but their results are LOCKED behind the premium paywall and you do NOT have access to the contents. You cannot see the flags, scores, evidence, or conversation. If they ask what the analysis found or for any specifics, do not invent or guess — warmly explain that the full breakdown (every red and green flag, what each means, and what to do) unlocks with premium, and that they can upgrade from their profile or the analysis page. You can still answer general dating-safety questions.`;
+  } else if (analyses.length > 0) {
     const summaries = analyses.map((a, i) =>
       formatAnalysisForPrompt(a, i + 1, analyses.length)
     );

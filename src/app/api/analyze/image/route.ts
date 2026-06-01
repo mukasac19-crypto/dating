@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { analyzeConversationWithContext } from '@/lib/analyze-enhanced';
 import { createClient } from '@/lib/supabase/server';
-import { Json } from '@/types/supabase';
 import { ChatMessage } from '@/types';
 import { analysisRatelimit } from '@/lib/rate-limit'; // IMPORT SPECIFIC LIMITER
+import { persistAnalysis, gateAnalysisResponse } from '@/lib/save-analysis';
 
 export async function POST(request: NextRequest) {
   const supabase = createClient();
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     }
     // ------------------------
 
-    const { messages } = await request.json();
+    const { messages, sessionId } = await request.json();
 
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json({ error: 'Invalid messages format' }, { status: 400 });
@@ -35,29 +35,21 @@ export async function POST(request: NextRequest) {
     }));
 
     const analysisResult = await analyzeConversationWithContext(formattedMessages);
-    
-    const { error: saveError } = await supabase
-      .from('analysis_results')
-      .insert({
-        user_id: user.id,
-        risk_score: analysisResult.riskScore,
-        trust_score: analysisResult.trustScore,
-        escalation_index: analysisResult.escalationIndex,
-        chat_content: JSON.parse(JSON.stringify(analysisResult.chatContent)),
-        flags: JSON.parse(JSON.stringify(analysisResult.flags)),
-        timeline: JSON.parse(JSON.stringify(analysisResult.timeline)),
-        reciprocity_score: JSON.parse(JSON.stringify(analysisResult.reciprocityScore)),
-        consistency_analysis: JSON.parse(JSON.stringify(analysisResult.consistencyAnalysis)),
-        suggested_replies: JSON.parse(JSON.stringify(analysisResult.suggestedReplies)),
-        evidence: JSON.parse(JSON.stringify(analysisResult.evidence)),
-        metadata: { message_count: formattedMessages.length, analysis_type: 'image_ocr' } as Json,
-      });
 
-    if (saveError) {
-      console.error('Error saving analysis:', saveError);
+    const resultId = await persistAnalysis(
+      supabase,
+      user.id,
+      analysisResult,
+      { message_count: formattedMessages.length, analysis_type: 'image_ocr' },
+      sessionId
+    );
+
+    if (!resultId) {
+      return NextResponse.json({ error: 'Failed to save analysis' }, { status: 500 });
     }
 
-    return NextResponse.json({ result: analysisResult });
+    const gated = await gateAnalysisResponse(supabase, user.id, resultId, analysisResult);
+    return NextResponse.json(gated);
   } catch (error) {
     console.error('Image analysis error:', error);
     return NextResponse.json({ error: 'Failed to analyze conversation' }, { status: 500 });
