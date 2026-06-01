@@ -1,9 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import Link from 'next/link';
 import { Lock, Check, ArrowRight, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { createClient } from '@/lib/supabase/client';
 
 const PERKS = [
   'The full breakdown of every red and green flag',
@@ -14,22 +16,71 @@ const PERKS = [
 
 /**
  * Upgrade gate shown in place of the full analysis for non-premium users.
- * Kicks off a Stripe Checkout (or Customer Portal) session via /api/stripe/manage.
+ *
+ * - Permanent users: straight to Stripe Checkout via /api/stripe/manage.
+ * - Anonymous (ad-funnel) users: first capture email + password to convert the
+ *   anonymous account into a permanent one (preserving their analysis), THEN go
+ *   to checkout. This also captures the email before the wallet, enabling
+ *   abandoned-checkout follow-up.
  */
 export default function Paywall({ className = '' }: { className?: string }) {
+  const supabase = createClient();
   const [loading, setLoading] = useState(false);
+  const [isAnonymous, setIsAnonymous] = useState<boolean | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
 
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setIsAnonymous(!!user?.is_anonymous);
+    });
+  }, [supabase]);
+
+  const goToCheckout = async () => {
+    const res = await fetch('/api/stripe/manage', { method: 'POST' });
+    if (!res.ok) throw new Error('Could not start checkout.');
+    const data = await res.json();
+    if (!data?.url) throw new Error('Could not start checkout.');
+    window.location.href = data.url;
+  };
+
+  // Permanent users (or anyone already registered) → checkout directly.
   const handleUpgrade = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/stripe/manage', { method: 'POST' });
-      if (!res.ok) throw new Error('Could not start checkout.');
-      const data = await res.json();
-      if (data?.url) {
-        window.location.href = data.url;
-      } else {
-        throw new Error('Could not start checkout.');
+      await goToCheckout();
+    } catch (err) {
+      toast.error((err as Error).message || 'Something went wrong. Please try again.');
+      setLoading(false);
+    }
+  };
+
+  // Anonymous users → convert to a permanent account, then checkout.
+  const handleCreateAndPay = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim() || password.length < 6) {
+      toast.error('Enter your email and a password of at least 6 characters.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({
+        email: email.trim(),
+        password,
+      });
+      if (error) {
+        const msg = error.message?.toLowerCase() || '';
+        if (msg.includes('already') || msg.includes('registered') || msg.includes('exists')) {
+          toast.error('That email already has an account. Please sign in instead.');
+        } else {
+          toast.error(error.message || 'Could not create your account.');
+        }
+        setLoading(false);
+        return;
       }
+      // Account created/linked — proceed straight to payment.
+      await goToCheckout();
     } catch (err) {
       toast.error((err as Error).message || 'Something went wrong. Please try again.');
       setLoading(false);
@@ -73,24 +124,66 @@ export default function Paywall({ className = '' }: { className?: string }) {
           ))}
         </ul>
 
-        <button
-          onClick={handleUpgrade}
-          disabled={loading}
-          className="group mt-7 inline-flex items-center justify-center gap-2 rounded-full bg-white px-6 py-3.5 text-base font-semibold text-slate-900 hover:bg-stone-100 transition-colors shadow-lg disabled:opacity-70 disabled:cursor-not-allowed w-full sm:w-auto"
-        >
-          {loading ? (
-            'Starting checkout…'
-          ) : (
-            <>
+        {/* Anonymous users: register inline, then pay. */}
+        {isAnonymous && showForm ? (
+          <form onSubmit={handleCreateAndPay} className="mt-7 space-y-3 max-w-sm">
+            <p className="text-sm font-medium text-white">Create your account to continue</p>
+            <input
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="w-full rounded-xl bg-white/95 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-white"
+            />
+            <input
+              type="password"
+              autoComplete="new-password"
+              placeholder="Password (min 6 characters)"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={6}
+              className="w-full rounded-xl bg-white/95 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-white"
+            />
+            <button
+              type="submit"
+              disabled={loading}
+              className="group w-full inline-flex items-center justify-center gap-2 rounded-full bg-white px-6 py-3.5 text-base font-semibold text-slate-900 hover:bg-stone-100 transition-colors shadow-lg disabled:opacity-70 disabled:cursor-not-allowed"
+            >
               <Sparkles className="w-4 h-4 text-indigo-600" />
-              Upgrade to view results
+              {loading ? 'Setting up…' : 'Create account & continue'}
               <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
-            </>
-          )}
-        </button>
+            </button>
+            <p className="text-xs text-indigo-200/80">
+              Already have an account?{' '}
+              <Link href="/login" className="underline font-medium text-white">
+                Sign in
+              </Link>
+            </p>
+          </form>
+        ) : (
+          <button
+            onClick={() => (isAnonymous ? setShowForm(true) : handleUpgrade())}
+            disabled={loading || isAnonymous === null}
+            className="group mt-7 inline-flex items-center justify-center gap-2 rounded-full bg-white px-6 py-3.5 text-base font-semibold text-slate-900 hover:bg-stone-100 transition-colors shadow-lg disabled:opacity-70 disabled:cursor-not-allowed w-full sm:w-auto"
+          >
+            {loading ? (
+              'Starting checkout…'
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4 text-indigo-600" />
+                Upgrade to view results
+                <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+              </>
+            )}
+          </button>
+        )}
 
         <p className="mt-3 text-xs text-indigo-200/80">
-          Cancel anytime from your profile. Secure checkout by Stripe.
+          $25/month · Cancel anytime · Secure checkout by Stripe.
         </p>
       </div>
     </motion.div>

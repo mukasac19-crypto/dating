@@ -7,7 +7,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- Profiles table (extends Supabase auth.users)
 CREATE TABLE public.profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  email TEXT UNIQUE NOT NULL,
+  email TEXT UNIQUE, -- nullable: anonymous (ad-funnel) users have no email
   full_name TEXT,
   username TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { analyzeConversationWithContext } from '@/lib/analyze-enhanced';
 import { createClient } from '@/lib/supabase/server';
 import { ChatMessage } from '@/types';
-import { analysisRatelimit } from '@/lib/rate-limit'; // IMPORT SPECIFIC LIMITER
+import { analysisRatelimit, checkAnonAnalysisLimit, getClientIp } from '@/lib/rate-limit';
 import { persistAnalysis, gateAnalysisResponse } from '@/lib/save-analysis';
 
 export async function POST(request: NextRequest) {
@@ -12,6 +12,17 @@ export async function POST(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Strict daily cap for anonymous (ad-funnel) users, keyed by IP.
+    if (user.is_anonymous) {
+      const allowed = await checkAnonAnalysisLimit(getClientIp(request));
+      if (!allowed) {
+        return NextResponse.json(
+          { error: "You've used your free analyses. Create an account to keep going.", code: 'ANON_LIMIT' },
+          { status: 429 }
+        );
+      }
     }
 
     // --- RATE LIMIT CHECK ---

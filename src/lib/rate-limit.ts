@@ -49,6 +49,33 @@ export const chatRatelimit = new Ratelimit({
   prefix: "@upstash/ratelimit:chat",
 });
 
+// Anonymous (logged-out / ad-funnel) analysis: strict per-IP DAILY cap so bots
+// and ad-scrapers can't burn AI spend. Keyed by IP, not user id.
+export const ANON_ANALYSIS_DAILY_LIMIT = 2;
+export const anonAnalysisRatelimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(ANON_ANALYSIS_DAILY_LIMIT, "86400 s"),
+  prefix: "@upstash/ratelimit:anon-analysis",
+});
+
+/**
+ * Enforce the strict anonymous-analysis cap for a given IP. Returns true if the
+ * request is allowed, false if the daily limit is exhausted. Fails open if
+ * Redis is unavailable.
+ */
+export async function checkAnonAnalysisLimit(ip: string): Promise<boolean> {
+  if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
+    return true;
+  }
+  try {
+    const { success } = await anonAnalysisRatelimit.limit(`ip:${ip}`);
+    return success;
+  } catch (error) {
+    console.error("Anon analysis rate limit error (Fail-Open):", error);
+    return true;
+  }
+}
+
 /**
  * Retrieves the client's real IP address, handling proxies and load balancers.
  */
