@@ -6,6 +6,10 @@ import { isPremium } from '@/lib/subscription';
 import { buildAnalysisPreview } from '@/lib/analysis-preview';
 import type { AnalysisResult } from '@/types';
 
+// Always render per-request: the premium/locked decision depends on the live
+// subscription, which must never be served from a cached render.
+export const dynamic = 'force-dynamic';
+
 export default async function AnalysisPage({
   params,
 }: {

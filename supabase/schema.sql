@@ -8,6 +8,8 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE TABLE public.profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   email TEXT UNIQUE NOT NULL,
+  full_name TEXT,
+  username TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   subscription TEXT DEFAULT 'free' CHECK (subscription IN ('free', 'premium')),
   analysis_count INTEGER DEFAULT 0,

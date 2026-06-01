@@ -7,6 +7,9 @@ import { AnalysisResult } from '../../../../types';
 import { isPremium } from '@/lib/subscription';
 import { buildAnalysisPreview, type AnalysisPreview } from '@/lib/analysis-preview';
 
+// Per-request render: gating depends on the live subscription status.
+export const dynamic = 'force-dynamic';
+
 // Define the Message type to match the client-side type
 interface Message {
   id: string;
