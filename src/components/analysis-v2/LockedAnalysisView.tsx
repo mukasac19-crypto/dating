@@ -150,7 +150,7 @@ export default function LockedAnalysisView({
           </div>
         </motion.section>
 
-        <Paywall />
+        <Paywall analysisId={preview.id} />
 
         {/* Blurred placeholder hinting at the locked detail */}
         <div className="relative" aria-hidden>

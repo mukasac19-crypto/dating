@@ -73,6 +73,51 @@ export type Database = {
           },
         ]
       }
+      analysis_unlocks: {
+        Row: {
+          amount: number | null
+          analysis_id: string
+          created_at: string
+          currency: string | null
+          id: string
+          stripe_session_id: string | null
+          user_id: string
+        }
+        Insert: {
+          amount?: number | null
+          analysis_id: string
+          created_at?: string
+          currency?: string | null
+          id?: string
+          stripe_session_id?: string | null
+          user_id: string
+        }
+        Update: {
+          amount?: number | null
+          analysis_id?: string
+          created_at?: string
+          currency?: string | null
+          id?: string
+          stripe_session_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analysis_unlocks_analysis_id_fkey"
+            columns: ["analysis_id"]
+            isOneToOne: false
+            referencedRelation: "analysis_results"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "analysis_unlocks_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       chat_history: {
         Row: {
           created_at: string | null

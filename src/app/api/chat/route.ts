@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { DatingSafetyPromptBuilder } from '@/lib/prompt-builder';
 import { chatRatelimit } from '@/lib/rate-limit';
 import { isPremium } from '@/lib/subscription';
+import { getUnlockedAnalysisIds } from '@/lib/unlock';
 
 const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -60,11 +61,25 @@ export async function POST(request: NextRequest) {
 
     const premium = isPremium(profile);
 
-    // Only premium users get the analysis content injected into the prompt.
-    // For everyone else it's withheld entirely, so the assistant has nothing
-    // to reveal — the results stay behind the paywall.
-    const sessionAnalyses =
-      premium && sessionId ? await fetchSessionAnalyses(supabase, sessionId, user.id) : [];
+    // Inject analysis content only for analyses the user may see: premium users
+    // get all of them, others only the ones they've unlocked one-time. Anything
+    // locked is withheld entirely, so the assistant has nothing to reveal.
+    let sessionAnalyses: any[] = [];
+    let lockedWithNoAccess = false;
+    if (sessionId) {
+      const ids = await fetchSessionAnalysisIds(supabase, sessionId, user.id);
+      if (ids.length > 0) {
+        const accessibleIds = premium
+          ? ids
+          : Array.from(await getUnlockedAnalysisIds(supabase, user.id, ids));
+        if (accessibleIds.length > 0) {
+          sessionAnalyses = await fetchAnalysesByIds(supabase, accessibleIds);
+        }
+        // Only show the "locked" messaging when nothing in the session is
+        // accessible — otherwise we just inject what they can see.
+        lockedWithNoAccess = sessionAnalyses.length === 0;
+      }
+    }
 
     const rawName =
       profile?.full_name?.trim() ||
@@ -76,7 +91,7 @@ export async function POST(request: NextRequest) {
     const systemPrompt = buildSystemPrompt({
       firstName,
       analyses: sessionAnalyses,
-      locked: !premium,
+      locked: lockedWithNoAccess,
     });
 
     // Strip any client-provided system messages (we own that channel now)
@@ -113,21 +128,25 @@ export async function POST(request: NextRequest) {
 /*  Helpers                                                                   */
 /* -------------------------------------------------------------------------- */
 
-async function fetchSessionAnalyses(
+async function fetchSessionAnalysisIds(
   supabase: ReturnType<typeof createClient>,
   sessionId: string,
   userId: string
-) {
+): Promise<string[]> {
   const { data: session } = await supabase
     .from('chat_sessions')
     .select('analysis_ids')
     .eq('id', sessionId)
     .eq('user_id', userId)
     .maybeSingle();
+  return session?.analysis_ids || [];
+}
 
-  const ids: string[] = session?.analysis_ids || [];
+async function fetchAnalysesByIds(
+  supabase: ReturnType<typeof createClient>,
+  ids: string[]
+) {
   if (ids.length === 0) return [];
-
   const { data: rows } = await supabase
     .from('analysis_results')
     .select(

@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation';
 import DashboardClientPage from './client-page';
 import { AnalysisResult } from '../../../../types';
 import { isPremium } from '@/lib/subscription';
+import { getUnlockedAnalysisIds } from '@/lib/unlock';
 import { buildAnalysisPreview, type AnalysisPreview } from '@/lib/analysis-preview';
 
 // Per-request render: gating depends on the live subscription status.
@@ -54,6 +55,12 @@ export default async function ChatSessionPage({ params }: { params: { sessionId:
   if (sessionError || !session) {
     notFound();
   }
+
+  // One-time unlocks: which analyses in this session the user has paid to view
+  // (premium users see everything, so we skip the lookup for them).
+  const unlockedIds = premium
+    ? new Set<string>()
+    : await getUnlockedAnalysisIds(supabase, user.id, session.analysis_ids ?? []);
 
   // Fetch the raw chat messages for this session
   const { data: history } = await supabase
@@ -108,7 +115,7 @@ export default async function ChatSessionPage({ params }: { params: { sessionId:
         if (message.type === 'analysis' && message.analysisResultId) {
           const fullAnalysis = analysisResultsMap.get(message.analysisResultId);
           if (fullAnalysis) {
-            if (premium) {
+            if (premium || unlockedIds.has(message.analysisResultId)) {
               message.analysisResult = fullAnalysis;
               message.locked = false;
             } else {

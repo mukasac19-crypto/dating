@@ -154,6 +154,8 @@ export default function AnalysisView({ analysis, firstName }: Props) {
 
         <NextSteps steps={nextSteps} />
 
+        <AskFollowUp analysisId={analysis.id} firstName={firstName ?? null} />
+
         <DeepDetails analysis={analysis} allFlags={allPlainFlags} focusFlagId={focusFlagId} />
 
         <SafetyReminders verdictLevel={verdict.level} />
@@ -173,6 +175,73 @@ export default function AnalysisView({ analysis, firstName }: Props) {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Ask follow-up questions (hand-off into the chat)                          */
+/* -------------------------------------------------------------------------- */
+
+function AskFollowUp({
+  analysisId,
+  firstName,
+}: {
+  analysisId: string;
+  firstName: string | null;
+}) {
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+
+  const open = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/chat/from-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ analysisId }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.sessionId) {
+        throw new Error(data?.error || 'Could not open the chat.');
+      }
+      router.push(`/dashboard/chat/${data.sessionId}`);
+    } catch (err) {
+      toast.error((err as Error).message || 'Something went wrong. Please try again.');
+      setLoading(false);
+    }
+  };
+
+  return (
+    <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-slate-900 p-6 sm:p-7 text-white shadow-lg shadow-indigo-900/20">
+      <div aria-hidden className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-16 -right-16 w-48 h-48 rounded-full bg-rose-400/20 blur-3xl" />
+        <div className="absolute -bottom-20 -left-16 w-48 h-48 rounded-full bg-emerald-400/20 blur-3xl" />
+      </div>
+      <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <div className="flex-shrink-0 w-11 h-11 rounded-2xl bg-white/15 flex items-center justify-center">
+            <MessageCircle className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight">
+              Still have questions{firstName ? `, ${firstName}` : ''}?
+            </h2>
+            <p className="mt-1 text-sm text-indigo-100 leading-relaxed max-w-md">
+              Ask the AI anything about this analysis — what a flag means, what to say back,
+              or what to do next.
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={open}
+          disabled={loading}
+          className="group flex-shrink-0 inline-flex items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-semibold text-slate-900 hover:bg-stone-100 transition-colors shadow disabled:opacity-70 disabled:cursor-not-allowed"
+        >
+          <Send className="w-4 h-4 text-indigo-600" />
+          {loading ? 'Opening…' : 'Ask a follow-up'}
+        </button>
+      </div>
+    </section>
   );
 }
 

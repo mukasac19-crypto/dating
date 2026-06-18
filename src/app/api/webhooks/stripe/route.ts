@@ -2,6 +2,7 @@ import { headers } from 'next/headers';
 import { getStripe } from '@/lib/stripe';
 import { createClient } from '@supabase/supabase-js';
 import { SUBSCRIPTION_FREE, SUBSCRIPTION_PREMIUM } from '@/lib/subscription';
+import { recordUnlock, ONE_TIME_UNLOCK_TYPE } from '@/lib/unlock';
 import Stripe from 'stripe';
 
 // Stripe must receive the raw, unparsed body to verify the signature.
@@ -94,6 +95,27 @@ export async function POST(req: Request) {
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session;
+
+        // One-time ("pay per analysis") unlock. Record it so the user keeps
+        // access even if they closed the tab before the return redirect.
+        if (
+          session.mode === 'payment' &&
+          session.metadata?.type === ONE_TIME_UNLOCK_TYPE &&
+          session.payment_status === 'paid'
+        ) {
+          const { userId, analysisId } = session.metadata;
+          if (userId && analysisId) {
+            await recordUnlock(supabaseAdmin, {
+              userId,
+              analysisId,
+              sessionId: session.id,
+              amount: session.amount_total,
+              currency: session.currency,
+            });
+          }
+          break;
+        }
+
         if (session.mode !== 'subscription' || !session.subscription) break;
 
         const userId = session.metadata?.userId;

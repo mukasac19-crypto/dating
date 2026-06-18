@@ -19,6 +19,18 @@ export const PREMIUM_PLAN = {
   ],
 } as const;
 
+/**
+ * One-time "pay per analysis" unlock. The user pays this once to view the full
+ * breakdown of a single analysis, forever. `amountCents` is the source of truth
+ * for the Stripe charge; keep `priceLabel` in sync with it.
+ */
+export const ONE_TIME_UNLOCK = {
+  priceLabel: '$8',
+  amountCents: 800,
+  currency: 'usd',
+  productName: 'Swipe Safe — unlock this analysis',
+} as const;
+
 export const FREE_PLAN = {
   name: 'Free',
   priceLabel: '$0',
