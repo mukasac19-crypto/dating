@@ -26,13 +26,47 @@ export const ANALYTICS_EVENTS = {
 
 type EventParams = Record<string, string | number | boolean | null | undefined>;
 
-/** Fire a GA4 event. No-ops on the server or if analytics hasn't loaded. */
+/**
+ * Maps our funnel events to Meta Pixel events. `standard: true` uses a Meta
+ * standard event (optimizable as a campaign objective); the rest are custom
+ * events (still usable as custom conversions). Events not listed here are
+ * GA-only.
+ */
+const META_EVENT_MAP: Record<string, { event: string; standard: boolean }> = {
+  [ANALYTICS_EVENTS.SCAN_STARTED]: { event: 'ScanStarted', standard: false },
+  [ANALYTICS_EVENTS.ANALYSIS_STARTED]: { event: 'AnalysisStarted', standard: false },
+  [ANALYTICS_EVENTS.ANALYSIS_COMPLETED]: { event: 'AnalysisCompleted', standard: false },
+  [ANALYTICS_EVENTS.PAYWALL_VIEWED]: { event: 'PaywallViewed', standard: false },
+  [ANALYTICS_EVENTS.UPGRADE_CLICK]: { event: 'UpgradeClick', standard: false },
+  [ANALYTICS_EVENTS.BEGIN_CHECKOUT]: { event: 'InitiateCheckout', standard: true },
+  [ANALYTICS_EVENTS.SIGN_UP]: { event: 'CompleteRegistration', standard: true },
+  [ANALYTICS_EVENTS.PURCHASE]: { event: 'Purchase', standard: true },
+};
+
+function trackMeta(name: string, params: EventParams): void {
+  const fbq = (window as unknown as { fbq?: (...a: unknown[]) => void }).fbq;
+  if (typeof fbq !== 'function') return;
+  const mapping = META_EVENT_MAP[name];
+  if (!mapping) return;
+  // Meta wants value + currency on monetary events (Purchase, InitiateCheckout).
+  const fbParams: Record<string, unknown> = {};
+  if (typeof params.value === 'number') fbParams.value = params.value;
+  if (typeof params.currency === 'string') fbParams.currency = params.currency;
+  fbq(mapping.standard ? 'track' : 'trackCustom', mapping.event, fbParams);
+}
+
+/** Fire a GA4 event (and its Meta Pixel counterpart). No-ops on the server. */
 export function trackEvent(name: string, params: EventParams = {}): void {
   if (typeof window === 'undefined') return;
   try {
     sendGAEvent('event', name, params);
   } catch {
     // Analytics must never break the app.
+  }
+  try {
+    trackMeta(name, params);
+  } catch {
+    // ignore
   }
 }
 
@@ -49,6 +83,13 @@ export function trackPageView(path: string, title: string): void {
       page_title: title,
       page_location: window.location.href,
     });
+  } catch {
+    // ignore
+  }
+  // Meta only auto-fires PageView on the initial load; mirror SPA navigations.
+  try {
+    const fbq = (window as unknown as { fbq?: (...a: unknown[]) => void }).fbq;
+    if (typeof fbq === 'function') fbq('track', 'PageView');
   } catch {
     // ignore
   }

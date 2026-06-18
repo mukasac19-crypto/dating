@@ -5,6 +5,7 @@ import { Toaster } from 'react-hot-toast'
 // 1. IMPORT THE ANALYTICS COMPONENT
 import { GoogleAnalytics } from '@next/third-parties/google'
 import AnalyticsRouteTracker from '@/components/AnalyticsRouteTracker'
+import MetaPixel from '@/components/MetaPixel'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -48,6 +49,8 @@ export default function RootLayout({
         <GoogleAnalytics gaId="G-3J7SQ7MSHB" />
         {/* Fires titled page_views on client-side route changes */}
         <AnalyticsRouteTracker />
+        {/* Meta (Facebook) Pixel */}
+        <MetaPixel />
       </body>
     </html>
   )
