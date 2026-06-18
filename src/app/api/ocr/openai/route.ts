@@ -139,9 +139,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Strict daily cap for anonymous (ad-funnel) users, keyed by IP.
+    // Daily caps for anonymous (ad-funnel) users: per-user quota + per-IP backstop.
     if (user.is_anonymous) {
-      const allowed = await checkAnonAnalysisLimit(getClientIp(request));
+      const allowed = await checkAnonAnalysisLimit(user.id, getClientIp(request));
       if (!allowed) {
         return NextResponse.json(
           { error: "You've used your free analyses. Create an account to keep going.", code: 'ANON_LIMIT' },
