@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
@@ -16,6 +16,7 @@ import {
 import type { VerdictMeta } from '@/lib/flag-labels';
 import type { AnalysisPreview } from '@/lib/analysis-preview';
 import Paywall from '@/components/Paywall';
+import { trackEvent, ANALYTICS_EVENTS } from '@/lib/analytics';
 
 const VERDICT_ICONS: Record<VerdictMeta['level'], LucideIcon> = {
   safe: ShieldCheck,
@@ -53,6 +54,17 @@ export default function LockedAnalysisView({
   const router = useRouter();
   const { verdict, redCount, greenCount } = preview;
   const Icon = VERDICT_ICONS[verdict.level];
+
+  // A non-premium user reaching this screen has hit the paywall — the key
+  // top-of-monetization signal.
+  useEffect(() => {
+    trackEvent(ANALYTICS_EVENTS.PAYWALL_VIEWED, {
+      result_id: preview.id,
+      verdict: verdict.level,
+      red_count: redCount,
+      green_count: greenCount,
+    });
+  }, [preview.id, verdict.level, redCount, greenCount]);
 
   const timeAgo = useMemo(() => {
     try {

@@ -8,6 +8,7 @@ import { ArrowRight, Lock, Check, ScanLine, ShieldCheck, Zap } from 'lucide-reac
 import toast from 'react-hot-toast';
 import { createClient } from '@/lib/supabase/client';
 import Logo from '@/components/Logo';
+import { trackEvent, ANALYTICS_EVENTS } from '@/lib/analytics';
 
 const STEPS = [
   'Upload a screenshot of your chat',
@@ -22,6 +23,7 @@ export default function ScanPage() {
 
   const startScan = async () => {
     setLoading(true);
+    trackEvent(ANALYTICS_EVENTS.SCAN_STARTED, { source: 'scan_landing' });
     try {
       const {
         data: { user },

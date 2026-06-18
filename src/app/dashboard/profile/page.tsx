@@ -11,6 +11,7 @@ import SignOutButton from '@/components/SignOutButton';
 import { Check, Sparkles, Download, Trash2, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { format } from 'date-fns';
 import { PREMIUM_PLAN } from '@/lib/plan';
+import { trackEvent, ANALYTICS_EVENTS } from '@/lib/analytics';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
 
@@ -114,6 +115,15 @@ export default function ProfilePage() {
             // stale cached copy.
             router.refresh();
             if (justPaid && fresh?.subscription === 'premium') {
+              // Conversion! Fired on the checkout return. A Stripe webhook →
+              // Measurement Protocol call would be more reliable (this misses
+              // users who close the tab before the redirect resolves), but this
+              // captures the common path with no extra infra.
+              trackEvent(ANALYTICS_EVENTS.PURCHASE, {
+                value: 25,
+                currency: 'USD',
+                transaction_id: fresh.stripe_subscription_id || user.id,
+              });
               toast.success('Welcome to Premium! Your analyses are unlocked.');
             }
           }
@@ -150,10 +160,17 @@ export default function ProfilePage() {
 
   const handleManageSubscription = async () => {
     setIsRedirectingToStripe(true);
+    const isUpgrade = profile?.subscription !== 'premium';
+    if (isUpgrade) {
+      trackEvent(ANALYTICS_EVENTS.UPGRADE_CLICK, { location: 'profile' });
+    }
     try {
       const response = await fetch('/api/stripe/manage', { method: 'POST' });
       const data = await response.json();
       if (data.url) {
+        if (isUpgrade) {
+          trackEvent(ANALYTICS_EVENTS.BEGIN_CHECKOUT, { location: 'profile', value: 25, currency: 'USD' });
+        }
         window.location.href = data.url;
       } else {
         toast.error('Failed to initiate subscription.');

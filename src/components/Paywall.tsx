@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { Lock, Check, ArrowRight, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { createClient } from '@/lib/supabase/client';
+import { trackEvent, ANALYTICS_EVENTS } from '@/lib/analytics';
 
 const PERKS = [
   'The full breakdown of every red and green flag',
@@ -42,6 +43,7 @@ export default function Paywall({ className = '' }: { className?: string }) {
     if (!res.ok) throw new Error('Could not start checkout.');
     const data = await res.json();
     if (!data?.url) throw new Error('Could not start checkout.');
+    trackEvent(ANALYTICS_EVENTS.BEGIN_CHECKOUT, { location: 'paywall', value: 25, currency: 'USD' });
     window.location.href = data.url;
   };
 
@@ -80,6 +82,7 @@ export default function Paywall({ className = '' }: { className?: string }) {
         return;
       }
       // Account created/linked — proceed straight to payment.
+      trackEvent(ANALYTICS_EVENTS.SIGN_UP, { method: 'anonymous_convert', location: 'paywall' });
       await goToCheckout();
     } catch (err) {
       toast.error((err as Error).message || 'Something went wrong. Please try again.');
@@ -166,7 +169,13 @@ export default function Paywall({ className = '' }: { className?: string }) {
           </form>
         ) : (
           <button
-            onClick={() => (isAnonymous ? setShowForm(true) : handleUpgrade())}
+            onClick={() => {
+              trackEvent(ANALYTICS_EVENTS.UPGRADE_CLICK, {
+                location: 'paywall',
+                is_anonymous: !!isAnonymous,
+              });
+              return isAnonymous ? setShowForm(true) : handleUpgrade();
+            }}
             disabled={loading || isAnonymous === null}
             className="group mt-7 inline-flex items-center justify-center gap-2 rounded-full bg-white px-6 py-3.5 text-base font-semibold text-slate-900 hover:bg-stone-100 transition-colors shadow-lg disabled:opacity-70 disabled:cursor-not-allowed w-full sm:w-auto"
           >

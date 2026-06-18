@@ -11,6 +11,7 @@ import type { AnalysisPreview } from '@/lib/analysis-preview';
 import toast from 'react-hot-toast';
 import { createClient } from '@/lib/supabase/client';
 import type { User } from '@supabase/supabase-js';
+import { trackEvent, ANALYTICS_EVENTS } from '@/lib/analytics';
 
 export interface Message {
   id: string;
@@ -208,6 +209,14 @@ export default function DashboardClientPage({
     };
 
     if (data.locked) {
+      const p = data.preview;
+      trackEvent(ANALYTICS_EVENTS.ANALYSIS_COMPLETED, {
+        locked: true,
+        verdict: p?.verdict?.level,
+        red_count: p?.redCount,
+        green_count: p?.greenCount,
+        critical_count: p?.criticalCount,
+      });
       setActiveAnalysis(null);
       setMessages(prev => [...prev, { ...base, analysisPreview: data.preview, locked: true }]);
       toast.success('Analysis ready — unlock to view the full breakdown.');
@@ -215,6 +224,7 @@ export default function DashboardClientPage({
     }
 
     const fullResult: AnalysisResult = { ...data.result, id: resultId };
+    trackEvent(ANALYTICS_EVENTS.ANALYSIS_COMPLETED, { locked: false });
     setActiveAnalysis(fullResult);
     setMessages(prev => [...prev, { ...base, analysisResult: fullResult, locked: false }]);
     toast.success('Analysis complete! View summary in chat.');
@@ -226,6 +236,7 @@ export default function DashboardClientPage({
         return;
     }
     setIsProcessing(true);
+    trackEvent(ANALYTICS_EVENTS.ANALYSIS_STARTED, { method: 'text' });
     try {
       const response = await fetch('/api/analyze/text', {
         method: 'POST',
@@ -251,6 +262,7 @@ export default function DashboardClientPage({
     }
     if (!files || files.length === 0) return;
     setIsProcessing(true);
+    trackEvent(ANALYTICS_EVENTS.ANALYSIS_STARTED, { method: 'image', image_count: files.length });
     try {
       const formData = new FormData();
       files.forEach((file) => formData.append('images', file));

@@ -5,6 +5,7 @@
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import { useState } from 'react'
+import { trackEvent, ANALYTICS_EVENTS } from '@/lib/analytics'
 
 export default function SignupPage() {
   const [email, setEmail] = useState('')
@@ -30,6 +31,7 @@ export default function SignupPage() {
     if (error) {
       setError(error.message)
     } else {
+      trackEvent(ANALYTICS_EVENTS.SIGN_UP, { method: 'password' })
       setMessage('Check your email to confirm your account.')
     }
   }
@@ -37,6 +39,8 @@ export default function SignupPage() {
   const handleSignUpWithGoogle = async () => {
     setError(null)
     setMessage(null)
+
+    trackEvent(ANALYTICS_EVENTS.SIGN_UP, { method: 'google' })
 
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',

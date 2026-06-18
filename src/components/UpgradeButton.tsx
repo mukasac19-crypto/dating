@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import toast from 'react-hot-toast';
+import { trackEvent, ANALYTICS_EVENTS } from '@/lib/analytics';
 
 /**
  * Starts the upgrade flow from anywhere. If the visitor is signed in we kick off
@@ -25,6 +26,7 @@ export default function UpgradeButton({
 
   const onClick = async () => {
     setLoading(true);
+    trackEvent(ANALYTICS_EVENTS.UPGRADE_CLICK, { location: 'pricing' });
     try {
       const {
         data: { user },
@@ -39,6 +41,7 @@ export default function UpgradeButton({
       if (!res.ok) throw new Error('Could not start checkout.');
       const data = await res.json();
       if (data?.url) {
+        trackEvent(ANALYTICS_EVENTS.BEGIN_CHECKOUT, { location: 'pricing', value: 25, currency: 'USD' });
         window.location.href = data.url;
       } else {
         throw new Error('Could not start checkout.');
