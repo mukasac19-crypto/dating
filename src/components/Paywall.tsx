@@ -124,15 +124,16 @@ export default function Paywall({
     }
   };
 
-  // Anonymous → link a Google identity to the CURRENT user (preserves their
-  // analysis), then resume checkout for the chosen plan once the OAuth redirect
-  // returns. linkIdentity (not signInWithOAuth) is what keeps the same account.
+  // Anonymous → sign in with Google. This works for both brand-new and existing
+  // Google accounts (no Supabase "manual linking" needed). The anonymous user is
+  // left behind, so we carry ?claim=1 to transfer this analysis to the Google
+  // account on return, plus ?checkout to resume payment.
   const handleGoogle = async (plan: Plan) => {
     setLoading(plan);
     try {
       trackEvent(ANALYTICS_EVENTS.SIGN_UP, { method: 'google', location: 'paywall', plan });
-      const next = `/dashboard/analysis/${analysisId}?checkout=${plan}`;
-      const { error } = await supabase.auth.linkIdentity({
+      const next = `/dashboard/analysis/${analysisId}?claim=1&checkout=${plan}`;
+      const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
@@ -267,7 +268,10 @@ export default function Paywall({
             </button>
             <p className="text-xs text-indigo-200/80">
               Already have an account?{' '}
-              <Link href="/login" className="underline font-medium text-white">
+              <Link
+                href={`/login?next=${encodeURIComponent(`/dashboard/analysis/${analysisId}?claim=1`)}`}
+                className="underline font-medium text-white"
+              >
                 Sign in
               </Link>
             </p>

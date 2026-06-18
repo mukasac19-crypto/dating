@@ -17,6 +17,9 @@ function LoginContent() {
   const supabase = createClient()
 
   const authError = searchParams.get('error')
+  // Where to go after signing in. Used by the paywall to send the user back to
+  // the analysis they were unlocking (with ?claim=1 so it transfers to them).
+  const next = searchParams.get('next') || '/dashboard'
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -30,7 +33,7 @@ function LoginContent() {
     if (error) {
       setError(error.message)
     } else {
-      router.push('/dashboard')
+      router.push(next)
       router.refresh()
     }
   }
@@ -41,7 +44,7 @@ function LoginContent() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${location.origin}/auth/callback?next=/dashboard`,
+        redirectTo: `${location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
       },
     })
 

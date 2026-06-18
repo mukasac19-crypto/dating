@@ -62,7 +62,14 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  if (user && (request.nextUrl.pathname.startsWith('/login') || request.nextUrl.pathname.startsWith('/signup'))) {
+  // Only bounce *permanent* users away from the auth pages. Anonymous users
+  // (the ad-funnel scanners) must be able to reach /login and /signup to
+  // convert into — or sign into — a real account.
+  if (
+    user &&
+    !user.is_anonymous &&
+    (request.nextUrl.pathname.startsWith('/login') || request.nextUrl.pathname.startsWith('/signup'))
+  ) {
     const dashboardUrl = new URL('/dashboard', request.url);
     return NextResponse.redirect(dashboardUrl);
   }

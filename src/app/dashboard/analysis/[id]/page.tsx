@@ -6,6 +6,7 @@ import LockedAnalysisView from '@/components/analysis-v2/LockedAnalysisView';
 import UnlockPurchaseTracker from '@/components/analysis-v2/UnlockPurchaseTracker';
 import { isPremium } from '@/lib/subscription';
 import { isAnalysisUnlocked, reconcileUnlockFromSession } from '@/lib/unlock';
+import { claimAnalysisForUser } from '@/lib/claim';
 import { getStripe } from '@/lib/stripe';
 import { buildAnalysisPreview } from '@/lib/analysis-preview';
 import type { AnalysisResult } from '@/types';
@@ -19,15 +20,29 @@ export default async function AnalysisPage({
   searchParams,
 }: {
   params: { id: string };
-  searchParams: { session_id?: string };
+  searchParams: { session_id?: string; claim?: string };
 }) {
   const supabase = createClient();
   const { id } = params;
 
-  const [{ data: analysis, error }, { data: { user } }] = await Promise.all([
-    supabase.from('analysis_results').select('*').eq('id', id).single(),
-    supabase.auth.getUser(),
-  ]);
+  const { data: { user } } = await supabase.auth.getUser();
+
+  // If the visitor just authenticated with a different identity (Google or an
+  // existing account) after scanning anonymously, claim the stranded analysis
+  // into their account before we try to read it.
+  if (user && searchParams.claim === '1') {
+    try {
+      await claimAnalysisForUser(createAdminClient(), id, user.id);
+    } catch (err) {
+      console.error('Analysis claim failed:', err);
+    }
+  }
+
+  const { data: analysis, error } = await supabase
+    .from('analysis_results')
+    .select('*')
+    .eq('id', id)
+    .single();
 
   if (error || !analysis) {
     notFound();
